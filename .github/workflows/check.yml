@@ -1,0 +1,48 @@
+name: Validate desktop
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - run: npm test
+      - run: npm run test:core
+      - run: npm run build
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --features desktop -- -D warnings
+      - run: npm run desktop:build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uu-filer-${{ matrix.os }}-unsigned
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/dmg/*.dmg
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
