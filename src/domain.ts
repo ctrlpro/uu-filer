@@ -29,6 +29,13 @@ export interface Rules {
   digits: number;
   trim: boolean;
   letterCase: 'keep' | 'lower' | 'upper';
+  replaceEnabled?: boolean;
+  affixEnabled?: boolean;
+  cleanCopies?: boolean;
+  spacesToUnderscore?: boolean;
+  stripSpecial?: boolean;
+  removeLeadingNumber?: boolean;
+  extensionLower?: boolean;
 }
 export const defaultRules: Rules = {
   find: '',
@@ -40,6 +47,13 @@ export const defaultRules: Rules = {
   digits: 3,
   trim: true,
   letterCase: 'keep',
+  replaceEnabled: true,
+  affixEnabled: true,
+  cleanCopies: false,
+  spacesToUnderscore: false,
+  stripSpecial: false,
+  removeLeadingNumber: false,
+  extensionLower: false,
 };
 export const policyLabels: Record<Policy, string> = {
   deny: '禁止 AI',
@@ -54,11 +68,21 @@ export function applyRules(files: FileEntry[], rules: Rules): Change[] {
   return files.map((file, index) => {
     let [stem, ext] = splitName(file.name);
     if (rules.trim) stem = stem.trim();
-    if (rules.find) stem = stem.split(rules.find).join(rules.replace);
+    if (rules.replaceEnabled !== false) {
+      if (rules.find) stem = stem.split(rules.find).join(rules.replace);
+      if (rules.cleanCopies)
+        stem = stem
+          .replace(/(?:[_ -]*副本|[_ -]+copy)(?:\s*[（(]\d+[）)])?$/i, '')
+          .replace(/\s*[（(]\d+[）)]$/, '');
+    }
+    if (rules.spacesToUnderscore) stem = stem.replace(/\s+/g, '_');
+    if (rules.stripSpecial) stem = stem.replace(/[\[\]【】!！@#$%^&]+/g, '');
+    if (rules.removeLeadingNumber) stem = stem.replace(/^\d+[_ .-]+/, '');
     if (rules.letterCase === 'lower') stem = stem.toLowerCase();
     if (rules.letterCase === 'upper') stem = stem.toUpperCase();
-    stem = rules.prefix + stem + rules.suffix;
+    if (rules.affixEnabled !== false) stem = rules.prefix + stem + rules.suffix;
     if (rules.numbering) stem += `_${String(rules.start + index).padStart(rules.digits, '0')}`;
+    if (rules.extensionLower) ext = ext.toLowerCase();
     return { id: file.id, name: stem + ext };
   });
 }
