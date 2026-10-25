@@ -4,6 +4,7 @@ export interface Suggestion {
   reason: string;
 }
 export interface Prepared {
+  task: 'rules' | 'names';
   token: string;
   route: string;
   endpoint: string;

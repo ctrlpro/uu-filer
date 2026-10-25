@@ -7,7 +7,8 @@ test('rules, search, privacy and user presets survive the compact layout', async
   await expect(page.getByRole('textbox', { name: '采购合同_副本.pdf 的新名称' })).toHaveValue(
     '采购合同.pdf',
   );
-  await page.getByPlaceholder('例如：项目_').fill('归档_');
+  await page.getByRole('button', { name: '添加规则：添加前缀', exact: true }).click();
+  await page.getByLabel('前缀文字', { exact: true }).fill('归档_');
   await expect(page.getByRole('textbox', { name: '采购合同_副本.pdf 的新名称' })).toHaveValue(
     '归档_采购合同.pdf',
   );
@@ -20,31 +21,43 @@ test('rules, search, privacy and user presets survive the compact layout', async
   await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();
   await page.reload();
   await page.getByRole('combobox', { name: '加载命名方案' }).selectOption('归档方案');
-  await expect(page.getByPlaceholder('例如：项目_')).toHaveValue('归档_');
+  await page.getByRole('button', { name: '编辑第2条添加前缀', exact: true }).click();
+  await expect(page.getByLabel('前缀文字', { exact: true })).toHaveValue('归档_');
 });
 
-test('all twelve built-ins generate real previews and survive inspector tab changes', async ({
-  page,
-}) => {
+test('ordered rules stack, reorder, duplicate and show intermediate output', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: '载入示例', exact: true }).click();
-  await page.getByRole('tab', { name: '内置规则', exact: false }).click();
-  await expect(page.locator('.preset-item')).toHaveCount(12);
-  await page.getByRole('button', { name: '连续编号', exact: true }).click();
+  await page.getByRole('button', { name: '添加规则：添加前缀', exact: true }).click();
+  await page.getByLabel('前缀文字', { exact: true }).fill('项目 A_');
+  await page.getByRole('button', { name: '添加规则：替换空格', exact: true }).click();
   await expect(page.getByRole('textbox', { name: '采购合同_副本.pdf 的新名称' })).toHaveValue(
-    '采购合同_副本_001.pdf',
+    '项目_A_采购合同.pdf',
   );
-  await page.getByRole('tab', { name: 'AI 命名', exact: true }).click();
+  await expect(page.getByTestId('step-before')).toHaveText('项目 A_采购合同.pdf');
+  await expect(page.getByTestId('step-after')).toHaveText('项目_A_采购合同.pdf');
+  await page.getByRole('button', { name: '上移第3条规则', exact: true }).click();
   await expect(page.getByRole('textbox', { name: '采购合同_副本.pdf 的新名称' })).toHaveValue(
-    '采购合同_副本_001.pdf',
+    '项目 A_采购合同.pdf',
   );
-  await page.getByRole('tab', { name: '规则', exact: true }).click();
-  await page.getByLabel('起始数字', { exact: true }).fill('9');
+  await page.getByRole('button', { name: '复制第3条规则', exact: true }).click();
+  await page.getByLabel('前缀文字', { exact: true }).fill('归档_');
   await expect(page.getByRole('textbox', { name: '采购合同_副本.pdf 的新名称' })).toHaveValue(
-    '采购合同_副本_009.pdf',
+    '归档_项目 A_采购合同.pdf',
   );
-  await page.getByRole('tab', { name: '内置规则', exact: false }).click();
-  await page.getByLabel('搜索内置规则', { exact: true }).fill('日期');
+  await page.getByRole('checkbox', { name: '启用第4条添加前缀', exact: true }).uncheck();
+  await expect(page.getByRole('textbox', { name: '采购合同_副本.pdf 的新名称' })).toHaveValue(
+    '项目 A_采购合同.pdf',
+  );
+  await page.getByRole('button', { name: '删除第4条规则', exact: true }).click();
+  await expect(page.locator('.applied-rule')).toHaveCount(3);
+  await page.getByRole('tab', { name: 'AI 助手', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '采购合同_副本.pdf 的新名称' })).toHaveValue(
+    '项目 A_采购合同.pdf',
+  );
+  await page.getByRole('tab', { name: '规则库', exact: false }).click();
+  await expect(page.locator('.preset-item')).toHaveCount(13);
+  await page.getByLabel('搜索规则库', { exact: true }).fill('日期');
   await expect(page.locator('.preset-item')).toHaveCount(1);
 });
 
@@ -58,8 +71,10 @@ test('browser AI and disk execution stay disabled and settings clear the key on 
   await page.goto('/');
   await page.getByRole('button', { name: '载入示例', exact: true }).click();
   await expect(page.getByRole('button', { name: '确认并执行', exact: true })).toBeDisabled();
-  await page.getByRole('tab', { name: 'AI 命名', exact: true }).click();
-  await expect(page.getByRole('button', { name: '查看内容并生成', exact: true })).toBeDisabled();
+  await page.getByRole('tab', { name: 'AI 助手', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: '预览文件名并生成规则', exact: true }),
+  ).toBeDisabled();
   await page.getByRole('combobox', { name: '处理方式', exact: true }).selectOption('cloud');
   await expect(page.getByText('逐次授权云端发送', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '偏好与 AI 设置', exact: true }).click();
@@ -114,11 +129,12 @@ test('system theme follows OS, and panels collapse without losing rules', async 
   await page.emulateMedia({ colorScheme: 'light' });
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await page.getByRole('button', { name: '载入示例', exact: true }).click();
-  await page.getByPlaceholder('例如：项目_').fill('KEEP_');
+  await page.getByRole('button', { name: '添加规则：添加前缀', exact: true }).click();
+  await page.getByLabel('前缀文字', { exact: true }).fill('KEEP_');
   await page.getByRole('button', { name: '收起操作面板', exact: true }).click();
   await expect(page.getByRole('complementary', { name: '操作面板' })).toHaveCount(0);
   await page.getByRole('button', { name: '展开操作面板', exact: true }).click();
-  await expect(page.getByPlaceholder('例如：项目_')).toHaveValue('KEEP_');
+  await expect(page.getByLabel('前缀文字', { exact: true })).toHaveValue('KEEP_');
   await page.getByRole('separator', { name: '调整操作面板宽度' }).focus();
   await page.keyboard.press('ArrowLeft');
   await expect(page.getByRole('complementary', { name: '操作面板' })).toHaveCSS('width', '344px');
@@ -162,4 +178,29 @@ test('large file lists are virtualized and the final row is reachable', async ({
   });
   await expect(page.getByText('sample-0599.txt', { exact: true })).toBeVisible();
   expect(await page.locator('tbody tr').count()).toBeLessThan(100);
+});
+
+test('pointer dragging changes rule order without losing parameters', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '载入示例', exact: true }).click();
+  await page.getByRole('button', { name: '添加规则：添加前缀', exact: true }).click();
+  await page.getByLabel('前缀文字', { exact: true }).fill('项目 A_');
+  await page.getByRole('button', { name: '添加规则：替换空格', exact: true }).click();
+  const grip = await page
+    .getByRole('button', { name: '拖动第3条规则排序', exact: true })
+    .boundingBox();
+  const target = await page
+    .getByRole('button', { name: '编辑第2条添加前缀', exact: true })
+    .boundingBox();
+  await page.mouse.move(grip!.x + grip!.width / 2, grip!.y + grip!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(target!.x + target!.width / 2, target!.y + target!.height / 2, {
+    steps: 8,
+  });
+  await page.mouse.up();
+  await expect(page.getByRole('textbox', { name: '采购合同_副本.pdf 的新名称' })).toHaveValue(
+    '项目 A_采购合同.pdf',
+  );
+  await page.getByRole('button', { name: '编辑第3条添加前缀', exact: true }).click();
+  await expect(page.getByLabel('前缀文字', { exact: true })).toHaveValue('项目 A_');
 });

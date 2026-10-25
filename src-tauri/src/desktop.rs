@@ -209,6 +209,28 @@ async fn generate_ai(
     })
     .await
 }
+#[tauri::command]
+async fn generate_rules(
+    state: tauri::State<'_, Shared>,
+    token: String,
+    cloud_consent: bool,
+) -> Result<crate::rules::RuleDraft> {
+    work(state, move |w, s| {
+        let key = if cloud_consent {
+            w.ai.credential_endpoint(&token)?
+                .map(|endpoint| {
+                    secret(&endpoint)?
+                        .get_password()
+                        .map_err(|_| "无法从系统凭据库读取 Key，请先保存".to_string())
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        w.ai.generate_rules(s, &token, cloud_consent, key)
+    })
+    .await
+}
 fn secret(endpoint: &str) -> Result<keyring::Entry> {
     let endpoint = crate::ai::cloud_endpoint(endpoint)?;
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
@@ -291,6 +313,7 @@ pub fn run() {
             prepare_ai,
             discard_ai,
             generate_ai,
+            generate_rules,
             save_key,
             get_settings,
             save_settings

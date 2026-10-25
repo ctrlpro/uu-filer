@@ -4,6 +4,7 @@ import type { Workspace } from '../useWorkspace';
 import type { AppearanceController } from '../useAppearance';
 import { AppearanceControls } from './AppearanceControls';
 import { Modal } from './Modal';
+import { describeRule, ruleTitle } from '../pipeline';
 export type SettingsTab = 'appearance' | 'ai' | 'privacy';
 export function WorkspaceDialogs({
   w,
@@ -17,6 +18,7 @@ export function WorkspaceDialogs({
   const sourceNames = useMemo(() => new Map(w.files.map((f) => [f.id, f.name])), [w.files]);
   return (
     <>
+      {w.aiDraft && <AiRuleDraftDialog w={w} />}
       {w.dialog === 'settings' && <SettingsDialog w={w} a={a} initialTab={settingsTab} />}
       {w.dialog === 'save' && (
         <Modal title="保存命名方案" onClose={w.closeDialog}>
@@ -37,10 +39,18 @@ export function WorkspaceDialogs({
             {w.presets.some((p) => p.name === w.presetName.trim()) && (
               <p className="form-note">保存将更新同名方案。</p>
             )}
+            {w.presetProblem && <p className="validation-error">{w.presetProblem}</p>}
+            {w.steps.some((s) => s.rule.kind === 'aiNames') && (
+              <p className="form-note">逐文件 AI 建议不会保存在通用方案中。</p>
+            )}
           </div>
           <div className="modal-actions">
             <button onClick={w.closeDialog}>取消</button>
-            <button className="primary" disabled={!w.presetName.trim()} onClick={w.savePreset}>
+            <button
+              className="primary"
+              disabled={!w.presetName.trim() || !!w.presetProblem}
+              onClick={w.savePreset}
+            >
               保存
             </button>
           </div>
@@ -66,7 +76,12 @@ export function WorkspaceDialogs({
                 </p>
               </div>
             </div>
-            <p className="form-note">授权 5 分钟有效，仅限以下内容。文件或权限变化会取消任务。</p>
+            <p className="form-note">
+              {w.prepared.task === 'rules'
+                ? '仅参考下列文件名，不读取正文。'
+                : '参考下列文件名及选定内容。'}
+              授权 5 分钟有效，文件或权限变化会取消任务。
+            </p>
             {w.prepared.payload.messages.map((message, i) => (
               <div className="payload-block" key={i}>
                 <span>{message.role === 'system' ? '系统约束' : '命名要求与文件数据'}</span>
@@ -319,6 +334,83 @@ function SettingsDialog({
             保存设置
           </button>
         )}
+      </div>
+    </Modal>
+  );
+}
+
+function AiRuleDraftDialog({ w }: { w: Workspace }) {
+  const [mode, setMode] = useState<'append' | 'replace'>('append'),
+    [confirmed, setConfirmed] = useState(false);
+  const draft = w.aiDraft!;
+  const projected = (mode === 'append' ? w.steps.length : 0) + draft.rules.length;
+  return (
+    <Modal title="AI 规则草案" wide onClose={() => w.setAiDraft(null)}>
+      <div className="modal-body">
+        <p className="form-note">{draft.explanation}</p>
+        <ol className="ai-draft-list">
+          {draft.rules.map((rule, i) => (
+            <li key={i}>
+              <span>{String(i + 1).padStart(2, '0')}</span>
+              <div>
+                <strong>{ruleTitle(rule)}</strong>
+                <small>{describeRule(rule)}</small>
+              </div>
+            </li>
+          ))}
+        </ol>
+        <div className="adoption-options" role="group" aria-label="应用 AI 草案的方式">
+          <label>
+            <input
+              type="radio"
+              name="adopt"
+              checked={mode === 'append'}
+              onChange={() => {
+                setMode('append');
+                setConfirmed(false);
+              }}
+            />
+            追加到现有 {w.steps.length} 条规则之后
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="adopt"
+              checked={mode === 'replace'}
+              onChange={() => {
+                setMode('replace');
+                setConfirmed(false);
+              }}
+            />
+            替换整组规则
+          </label>
+        </div>
+        {mode === 'replace' && w.steps.length > 0 && (
+          <label className="replace-confirm">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(e) => setConfirmed(e.target.checked)}
+            />
+            确认替换当前 {w.steps.length} 条规则
+          </label>
+        )}
+        {projected > 64 && (
+          <p className="validation-error">规则总数超过 64 条，请选择替换或先移除部分规则。</p>
+        )}
+        <p className="form-note ai-safety-note">
+          加入后可编辑、排序和查看文件预览；此处不会执行文件操作。
+        </p>
+      </div>
+      <div className="modal-actions">
+        <button onClick={() => w.setAiDraft(null)}>放弃草案</button>
+        <button
+          className="primary"
+          disabled={projected > 64 || (mode === 'replace' && w.steps.length > 0 && !confirmed)}
+          onClick={() => w.adoptAiDraft(mode)}
+        >
+          加入应用区并预览
+        </button>
       </div>
     </Modal>
   );

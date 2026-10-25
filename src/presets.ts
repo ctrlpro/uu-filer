@@ -1,7 +1,8 @@
 import { defaultRules, type Rules } from './domain';
+import { legacySteps, parseSavedSteps, type RuleStep } from './pipeline';
 export interface Preset {
   name: string;
-  rules: Rules;
+  steps: RuleStep[];
 }
 export interface BuiltinPreset {
   id: string;
@@ -125,40 +126,35 @@ export function readPresets(value: string | null): Preset[] {
   try {
     const list: unknown = JSON.parse(value ?? '[]');
     if (!Array.isArray(list)) return [];
-    return list
-      .filter((p): p is Preset => {
-        if (
-          !p ||
-          typeof p !== 'object' ||
-          typeof p.name !== 'string' ||
-          !p.name.trim() ||
-          !p.rules ||
-          typeof p.rules !== 'object'
-        )
-          return false;
-        const r = p.rules;
-        return (
-          ['find', 'replace', 'prefix', 'suffix'].every((k) => typeof r[k] === 'string') &&
-          ['trim', 'numbering'].every((k) => typeof r[k] === 'boolean') &&
-          ['keep', 'lower', 'upper'].includes(r.letterCase) &&
-          Number.isInteger(r.start) &&
-          r.start >= 0 &&
-          r.start <= 999999 &&
-          Number.isInteger(r.digits) &&
-          r.digits >= 1 &&
-          r.digits <= 6 &&
-          [
-            'replaceEnabled',
-            'affixEnabled',
-            'cleanCopies',
-            'spacesToUnderscore',
-            'stripSpecial',
-            'removeLeadingNumber',
-            'extensionLower',
-          ].every((k) => r[k] === undefined || typeof r[k] === 'boolean')
-        );
-      })
-      .map((p) => ({ name: p.name, rules: { ...defaultRules, ...p.rules } }));
+    return list.flatMap((p): Preset[] => {
+      if (!p || typeof p !== 'object' || typeof p.name !== 'string' || !p.name.trim()) return [];
+      if (Object.hasOwn(p, 'steps')) {
+        const steps = parseSavedSteps(p.steps);
+        return steps ? [{ name: p.name, steps }] : [];
+      }
+      if (!p.rules || typeof p.rules !== 'object') return [];
+      const r = p.rules;
+      const valid =
+        ['find', 'replace', 'prefix', 'suffix'].every((k) => typeof r[k] === 'string') &&
+        ['trim', 'numbering'].every((k) => typeof r[k] === 'boolean') &&
+        ['keep', 'lower', 'upper'].includes(r.letterCase) &&
+        Number.isInteger(r.start) &&
+        r.start >= 0 &&
+        r.start <= 999999 &&
+        Number.isInteger(r.digits) &&
+        r.digits >= 1 &&
+        r.digits <= 6 &&
+        [
+          'replaceEnabled',
+          'affixEnabled',
+          'cleanCopies',
+          'spacesToUnderscore',
+          'stripSpecial',
+          'removeLeadingNumber',
+          'extensionLower',
+        ].every((k) => r[k] === undefined || typeof r[k] === 'boolean');
+      return valid ? [{ name: p.name, steps: legacySteps({ ...defaultRules, ...r }) }] : [];
+    });
   } catch {
     return [];
   }

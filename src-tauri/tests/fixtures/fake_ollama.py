@@ -29,6 +29,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                "remote_host": "https://example.invalid" if data["model"] == "fixture-cloud" else ""})
         with open(sys.argv[1], "a", encoding="utf-8") as log:
             log.write(json.dumps(data, ensure_ascii=False) + "\n")
+        if "ordered, reusable" in data["messages"][0]["content"]:
+            return self.reply({"message": {"content": json.dumps({"rules": [{"kind": "prefix", "params": {"text": "项目 A_"}}, {"kind": "spaces", "params": {"separator": "_"}}], "explanation": "先加前缀，再替换空格"}, ensure_ascii=False)}})
         suggestions = []
         for line in data["messages"][1]["content"].splitlines():
             try:

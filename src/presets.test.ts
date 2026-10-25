@@ -69,8 +69,8 @@ describe('built-in and saved rename rules', () => {
             },
           },
         ]),
-      )[0].rules.replaceEnabled,
-    ).toBe(true);
+      )[0].steps.length,
+    ).toBeGreaterThan(0);
     expect(readPresets('[{"name":"bad","rules":{"start":-1}}]')).toEqual([]);
     expect(readPresets('null')).toEqual([]);
     expect(readPresets('invalid')).toEqual([]);

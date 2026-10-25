@@ -378,7 +378,7 @@ export default function App() {
         </>
       )}
       <footer className="statusbar">
-        <span className={`status-dot ${w.conflicts ? 'warning' : ''}`} />
+        <span className={`status-dot ${w.conflicts || w.pipelineErrors.length ? 'warning' : ''}`} />
         <div className="counts">
           <span>
             已选 <b>{w.chosen.length}</b>
@@ -391,6 +391,9 @@ export default function App() {
           </span>
         </div>
         <div className="top-spacer" />
+        {w.pipelineErrors.length > 0 && (
+          <span className="pipeline-warning">{w.pipelineErrors.length} 条规则待配置</span>
+        )}
         {w.busy ? (
           <span className="busy-label" role="status">
             <LoaderCircle size={14} className="spin" />
