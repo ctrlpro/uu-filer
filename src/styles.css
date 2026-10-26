@@ -181,17 +181,11 @@ h3 {
   z-index: 3;
 }
 .logo {
-  width: 25px;
-  height: 25px;
-  background: var(--accent);
-  color: var(--on-accent);
-  border-radius: 7px;
-  display: grid;
-  place-items: center;
-}
-.logo svg {
-  width: 18px;
-  height: 18px;
+  width: 28px;
+  height: 28px;
+  display: block;
+  flex-shrink: 0;
+  object-fit: contain;
 }
 .brand {
   font-weight: 650;
@@ -1388,9 +1382,6 @@ button svg {
   white-space: nowrap;
 }
 .primary {
-  color: var(--on-accent);
-}
-.logo {
   color: var(--on-accent);
 }
 .text-button {

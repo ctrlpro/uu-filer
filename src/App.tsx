@@ -6,7 +6,6 @@ import {
   History,
   Info,
   Keyboard,
-  Layers3,
   Library,
   LoaderCircle,
   Moon,
@@ -102,9 +101,7 @@ export default function App() {
   const content = (
     <div className={`app ${a.settings.panelOpen ? '' : 'panel-hidden'}`} ref={appRef}>
       <header className="topbar">
-        <span className="logo">
-          <Layers3 size={18} />
-        </span>
+        <img className="logo" src="/logo.png" alt="" width="28" height="28" />
         <strong className="brand">uu filer</strong>
         <span className="top-separator" />
         <div className="breadcrumb">
