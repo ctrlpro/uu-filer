@@ -10,6 +10,7 @@ import {
   type Operation,
   type PlanItem,
   type Policy,
+  policyLabels,
 } from './domain';
 import { readPresets, type Preset } from './presets';
 import {
@@ -25,6 +26,7 @@ import {
   type RuleDraft,
 } from './pipeline';
 import type { Prepared, Suggestion, HistoryItem } from './types';
+import type { FeedbackNotice, NoticeKind } from './components/Feedback';
 import { containsFileNames } from './expressions';
 import {
   defaultScheme,
@@ -95,7 +97,7 @@ export function useWorkspace() {
     [destination, setDestination] = useState('');
   const [preview, setPreview] = useState<{ signature: string; items: PlanItem[] } | null>(null);
   const [busy, setBusy] = useState(''),
-    [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
+    [notice, setNotice] = useState<FeedbackNotice | null>(null);
   const [dialog, setDialog] = useState<
       'settings' | 'history' | 'execute' | 'save' | 'shortcuts' | null
     >(null),
@@ -130,16 +132,30 @@ export function useWorkspace() {
     browserFolder = useRef<HTMLInputElement>(null),
     busyRef = useRef(false);
   const preparedExamples = useRef<Example[]>([]);
-  const tell = useCallback((text: string, error = false) => setNotice({ text, error }), []);
+  const noticeSequence = useRef(0);
+  const tell = useCallback(
+    (text: string, kind: NoticeKind | boolean = 'success') =>
+      setNotice({
+        id: ++noticeSequence.current,
+        text,
+        kind: typeof kind === 'boolean' ? (kind ? 'error' : 'success') : kind,
+      }),
+    [],
+  );
+  const dismissNotice = useCallback(
+    (id: number) => setNotice((current) => (current?.id === id ? null : current)),
+    [],
+  );
   const run = useCallback(
     async (label: string, action: () => Promise<void>) => {
       if (busyRef.current) return;
       busyRef.current = true;
+      setNotice(null);
       setBusy(label);
       try {
         await action();
       } catch (e) {
-        tell(String(e), true);
+        tell(`${label.replace(/[.…]+$/u, '')}失败：${String(e)}`, true);
       } finally {
         busyRef.current = false;
         setBusy('');
@@ -572,6 +588,7 @@ export function useWorkspace() {
       }));
     setFiles((old) => [...old, ...items]);
     setSelected((old) => new Set([...old, ...items.map((f) => f.id)]));
+    if (items.length) tell(`已添加 ${items.length} 个文件（浏览器演示）`);
   }
   function loadSample() {
     const sample = sampleFiles();
@@ -581,22 +598,28 @@ export function useWorkspace() {
     const step = makeStep({ kind: 'cleanCopies', params: {} });
     setSteps([step]);
     setSelectedStepId(step.id);
-    tell('示例数据 · 不修改真实文件');
+    tell('示例数据 · 不修改真实文件', 'info');
   }
   async function removeSelected() {
+    if (!chosen.length) return;
+    const count = chosen.length;
     await run('移除条目…', async () => {
       if (desktop) await invoke('remove_files', { ids: chosen.map((f) => f.id) });
       setFiles((old) => old.filter((f) => !selected.has(f.id)));
       setSelected(new Set());
+      tell(`已从列表移除 ${count} 项，原文件未删除`);
     });
   }
   async function policy(value: Policy) {
     if (!chosen.length) return;
-    if (desktop)
-      await run('更新权限…', async () =>
-        setFiles(await invoke('set_policy', { ids: chosen.map((f) => f.id), policy: value })),
+    await run('更新权限…', async () => {
+      if (desktop)
+        setFiles(await invoke('set_policy', { ids: chosen.map((f) => f.id), policy: value }));
+      else setFiles((old) => old.map((f) => (selected.has(f.id) ? { ...f, policy: value } : f)));
+      tell(
+        `已更新 ${chosen.length} 项 AI 权限：${policyLabels[value]}${desktop ? '' : '（仅演示）'}`,
       );
-    else setFiles((old) => old.map((f) => (selected.has(f.id) ? { ...f, policy: value } : f)));
+    });
   }
   async function directoryPolicy(value: Policy) {
     if (!desktop) {
@@ -619,6 +642,7 @@ export function useWorkspace() {
         list.length
           ? `${list.length} 个本地模型 · 云端功能已禁用`
           : '没有本地模型，请先用 Ollama 下载模型',
+        list.length ? 'success' : 'info',
       );
     });
   }
@@ -673,7 +697,7 @@ export function useWorkspace() {
           cloudConsent: current.route === 'cloud',
         });
         if (!results.length) {
-          tell('未生成名称建议，原规则保持不变');
+          tell('未生成名称建议，原规则保持不变', 'info');
           return;
         }
         if (steps.length >= 64) {
@@ -719,20 +743,30 @@ export function useWorkspace() {
     const current = executionDraft;
     setDialog(null);
     setExecutionDraft(null);
-    await run('执行文件操作…', async () => {
+    const action = { rename: '重命名', copy: '复制', move: '移动' }[current.operation];
+    await run(`${action}…`, async () => {
       const { count: _count, ...args } = current;
       const result = await invoke<{ completed: number; error: string | null }>('execute', args);
-      setFiles(await invoke('list_files'));
       setSelected(new Set());
       setEdits({});
       setValidationExamples([]);
       if (!result.error) setSteps((old) => old.filter((s) => s.rule.kind !== 'aiNames'));
-      tell(
-        result.error
-          ? `已完成 ${result.completed} 项后停止：${result.error}。请在记录中恢复。`
-          : `已完成 ${result.completed} 项 · 可撤销`,
-        !!result.error,
-      );
+      const outcome = result.error
+        ? `${action}${result.completed ? '部分完成' : '失败'}：已完成 ${result.completed} 项。${result.error}。请在操作记录中检查或恢复。`
+        : result.completed
+          ? `${action}成功：${result.completed} 个文件 · 可在操作记录中撤销`
+          : `没有文件被${action}`;
+      tell(outcome, result.error ? 'error' : result.completed ? 'success' : 'info');
+      setBusy('刷新文件列表…');
+      try {
+        setFiles(await invoke('list_files'));
+      } catch (e) {
+        setFiles([]);
+        tell(
+          `${outcome}；文件列表刷新失败，请重新添加文件：${String(e)}`,
+          result.error ? 'error' : 'warning',
+        );
+      }
     });
   }
   async function showHistory() {
@@ -743,12 +777,21 @@ export function useWorkspace() {
     if (!undoBatch) return;
     const batch = undoBatch;
     setUndoBatch(null);
-    await run('检查并恢复文件…', async () => {
+    await run('撤销并恢复文件…', async () => {
       const n = await invoke<number>('undo', { batch });
-      setRecords(await invoke('history'));
+      setRecords((old) => old.map((r) => (r.batch === batch ? { ...r, state: 'undone' } : r)));
       setFiles([]);
       setSelected(new Set());
-      tell(`已恢复 ${n} 项 · 请重新添加文件`);
+      setEdits({});
+      setValidationExamples([]);
+      const outcome = n ? `撤销成功：已恢复 ${n} 项 · 请重新添加文件` : '没有需要恢复的文件';
+      tell(outcome, n ? 'success' : 'info');
+      setBusy('刷新操作记录…');
+      try {
+        setRecords(await invoke('history'));
+      } catch (e) {
+        tell(`${outcome}；操作记录刷新失败：${String(e)}`, 'warning');
+      }
     });
   }
   function closeDialog() {
@@ -838,7 +881,7 @@ export function useWorkspace() {
     canExecute,
     busy,
     notice,
-    setNotice,
+    dismissNotice,
     dialog,
     setDialog,
     executionDraft,

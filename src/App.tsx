@@ -20,7 +20,6 @@ import {
   Sparkles,
   Sun,
   Trash2,
-  X,
   Files,
 } from 'lucide-react';
 import { sizeLabel, type Policy } from './domain';
@@ -30,6 +29,7 @@ import { AppearanceControls } from './components/AppearanceControls';
 import { FileTable } from './components/FileTable';
 import { Inspector } from './components/Inspector';
 import { WorkspaceDialogs, type SettingsTab } from './components/WorkspaceDialogs';
+import { FeedbackProvider } from './components/Feedback';
 
 export default function App() {
   const w = useWorkspace(),
@@ -99,7 +99,7 @@ export default function App() {
     w.setTab(tab);
     a.update({ panelOpen: true });
   }
-  return (
+  const content = (
     <div className={`app ${a.settings.panelOpen ? '' : 'panel-hidden'}`} ref={appRef}>
       <header className="topbar">
         <span className="logo">
@@ -323,17 +323,6 @@ export default function App() {
             浏览器演示基础规则；高级规则、文件操作与 AI 使用桌面应用。
           </div>
         )}
-        {w.notice?.text && (
-          <div
-            className={`notice ${w.notice.error ? 'error' : ''}`}
-            role={w.notice.error ? 'alert' : 'status'}
-          >
-            <span>{w.notice.text}</span>
-            <button className="icon-button" aria-label="关闭提示" onClick={() => w.setNotice(null)}>
-              <X size={13} />
-            </button>
-          </div>
-        )}
         <FileTable
           w={w}
           compact={a.settings.density === 'compact'}
@@ -450,5 +439,10 @@ export default function App() {
       />
       <WorkspaceDialogs w={w} a={a} settingsTab={settingsTab} />
     </div>
+  );
+  return (
+    <FeedbackProvider notice={w.notice} busy={w.busy} dismiss={w.dismissNotice}>
+      {content}
+    </FeedbackProvider>
   );
 }

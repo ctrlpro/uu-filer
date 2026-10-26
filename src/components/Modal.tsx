@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
+import { ModalFeedback } from './Feedback';
 export function Modal({
   title,
   children,
@@ -34,6 +35,7 @@ export function Modal({
         </button>
       </div>
       {children}
+      <ModalFeedback />
     </dialog>
   );
 }

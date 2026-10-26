@@ -53,6 +53,9 @@ export async function installDesktopFixture(
       let files = structuredClone(initial),
         history: any[] = [];
       host.fixtureCalls = [];
+      host.fixtureFailures = {};
+      host.fixtureExecutionResult = null;
+      host.fixtureHold = '';
       host.fixtureRules = {
         rules: [
           { kind: 'prefix', params: { text: '项目 A_' } },
@@ -68,12 +71,21 @@ export async function installDesktopFixture(
         unregisterCallback: () => {},
         invoke: async (cmd: string, args: Record<string, any> = {}) => {
           host.fixtureCalls.push({ cmd, args });
+          if (host.fixtureHold === cmd)
+            await new Promise<void>((resolve) => {
+              host.fixtureRelease = resolve;
+            });
+          if (host.fixtureFailures[cmd]) throw new Error(host.fixtureFailures[cmd]);
           if (cmd.startsWith('plugin:event|')) return 1;
           if (cmd === 'get_settings')
             return { endpoint: 'https://fixture.invalid/v1', model: 'fixture-model' };
           if (cmd === 'plugin:dialog|open')
             return args.options?.directory ? '/fixture/destination' : initial.map((f) => f.path);
           if (cmd === 'add_files' || cmd === 'list_files') return structuredClone(files);
+          if (cmd === 'remove_files') {
+            files = files.filter((f) => !args.ids.includes(f.id));
+            return null;
+          }
           if (cmd === 'evaluate_pipeline')
             return host.__evaluatePipeline({
               files: args.ids.map((id: string) => files.find((f) => f.id === id)),
@@ -176,17 +188,21 @@ export async function installDesktopFixture(
           if (cmd === 'generate_rules') return host.fixtureRules;
           if (cmd === 'discard_ai') return null;
           if (cmd === 'execute') {
+            const result = host.fixtureExecutionResult ?? {
+              completed: args.changes.length,
+              error: null,
+            };
             history = args.changes.map((c: any, i: number) => ({
               id: 'h' + i,
               batch: 'batch-1',
               source: files.find((f) => f.id === c.id)!.path,
               target: (args.destination || '/fixture') + '/' + c.name,
               operation: args.operation,
-              state: 'complete',
+              state: i < result.completed ? 'complete' : 'planned',
               created: 1792886400,
             }));
-            if (args.operation !== 'copy') files = [];
-            return { batch: 'batch-1', completed: args.changes.length, error: null };
+            if (args.operation !== 'copy' && !result.error) files = [];
+            return { batch: 'batch-1', ...result };
           }
           if (cmd === 'history') return structuredClone(history);
           if (cmd === 'undo') {

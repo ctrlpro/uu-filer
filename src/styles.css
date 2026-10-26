@@ -1100,24 +1100,6 @@ dialog::backdrop {
   color: var(--muted);
   font-size: 10px;
 }
-.notice {
-  position: fixed;
-  bottom: 55px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 10px 17px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--secondary);
-  border-radius: 7px;
-  box-shadow: 0 6px 25px #0000001a;
-  z-index: 20;
-  display: none;
-  font-size: 12px;
-}
-.notice.show {
-  display: block;
-}
 .settings-label {
   font-size: 11px;
   color: var(--secondary);
@@ -1484,38 +1466,6 @@ button svg {
   padding: 8px 16px;
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
-}
-.notice {
-  position: static;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transform: none;
-  padding: 6px 12px;
-  background: var(--surface2);
-  box-shadow: none;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  font-size: 11px;
-  color: var(--secondary);
-  z-index: auto;
-  flex-shrink: 0;
-  max-height: 84px;
-  overflow: auto;
-}
-.notice > span {
-  flex: 1;
-  line-height: 1.6;
-}
-.notice .icon-button {
-  width: 20px;
-  height: 22px;
-  padding: 3px;
-}
-.notice.error {
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
 }
 .file-table {
   --row-height: 38px;
@@ -2902,4 +2852,80 @@ kbd {
   min-height: 37px;
   padding-top: 5px !important;
   padding-bottom: 5px !important;
+}
+
+.feedback-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 64px;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: max-content;
+  max-width: min(440px, calc(100vw - 32px));
+  max-height: min(180px, 35dvh);
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 6px 24px #00000020;
+  font-size: 12px;
+}
+.feedback-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.65;
+}
+.feedback-message > svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--accent-text);
+}
+.feedback-message > span {
+  overflow-wrap: anywhere;
+}
+.feedback-toast > .icon-button {
+  flex-shrink: 0;
+  width: 23px;
+  height: 23px;
+  min-height: 23px;
+  padding: 3px;
+}
+.feedback-toast.success {
+  border-left-color: var(--success);
+}
+.feedback-toast.success .feedback-message > svg {
+  color: var(--success);
+}
+.feedback-toast.error {
+  border-left-color: var(--danger);
+}
+.feedback-toast.error .feedback-message > svg {
+  color: var(--danger);
+}
+.feedback-toast.warning {
+  border-left-color: var(--warn);
+}
+.feedback-toast.warning .feedback-message > svg {
+  color: var(--warn);
+}
+.modal > .feedback-toast {
+  position: static;
+  width: auto;
+  max-width: none;
+  margin: 0 16px 12px;
+  box-shadow: none;
+  flex-shrink: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .feedback-toast .spin {
+    animation: none;
+  }
 }
