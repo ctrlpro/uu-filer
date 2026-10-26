@@ -1,20 +1,10 @@
-import { useMemo } from 'react';
 import type { Workspace } from '../useWorkspace';
-import { ruleError, ruleTitle, tracePipeline, type Rule } from '../pipeline';
+import { ruleError, ruleTitle, type Rule } from '../pipeline';
+import { ExpressionEditor } from './ExpressionEditor';
 export function RuleEditor({ w }: { w: Workspace }) {
   const step = w.selectedStep;
   const file = w.chosen.find((f) => f.id === w.activeFile) ?? w.chosen[0];
-  const trace = useMemo(
-    () =>
-      file && step
-        ? tracePipeline(
-            file,
-            w.chosen.findIndex((f) => f.id === file.id),
-            w.steps,
-          ).find((t) => t.id === step.id)
-        : null,
-    [file, step, w.chosen, w.steps],
-  );
+  const trace = file && step ? w.details.get(file.id)?.trace.find((t) => t.id === step.id) : null;
   if (!step) return <div className="rule-editor-empty">从规则库添加规则</div>;
   const rule = step.rule,
     error = ruleError(rule);
@@ -28,6 +18,13 @@ export function RuleEditor({ w }: { w: Workspace }) {
           {step.source === 'ai' ? ' · AI 生成' : ''}
         </span>
       </div>
+      {rule.kind === 'expression' && (
+        <ExpressionEditor
+          key={step.id}
+          value={rule.params}
+          onChange={(params) => update({ kind: 'expression', params })}
+        />
+      )}
       {(rule.kind === 'prefix' || rule.kind === 'suffix') && (
         <label className="field">
           {rule.kind === 'prefix' ? '前缀文字' : '后缀文字'}
@@ -236,6 +233,11 @@ export function RuleEditor({ w }: { w: Workspace }) {
           {error}
         </p>
       )}
+      {!error && w.evaluationError && (
+        <p className="validation-error" role="alert">
+          {w.evaluationError}
+        </p>
+      )}
       {file && trace && (
         <div className="step-preview">
           <div className="section-row">
@@ -248,6 +250,19 @@ export function RuleEditor({ w }: { w: Workspace }) {
           <label>
             输出<span data-testid="step-after">{trace.after}</span>
           </label>
+          {Object.keys(trace.fields).length > 0 && (
+            <dl className="capture-fields">
+              {Object.entries(trace.fields)
+                .filter(([key]) => key !== '0')
+                .map(([key, value]) => (
+                  <div key={key}>
+                    <dt>{key}</dt>
+                    <dd>{value || '（空）'}</dd>
+                  </div>
+                ))}
+            </dl>
+          )}
+          {trace.error && <p className="validation-error">{trace.error}</p>}
           {w.edits[file.id] !== undefined && <small>文件表格中有手动覆盖的最终名称。</small>}
         </div>
       )}

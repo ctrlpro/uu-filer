@@ -1,9 +1,15 @@
 import type { Page } from '@playwright/test';
-export async function installDesktopFixture(page: Page, multiple = false) {
+import { evaluateNative } from './engine-adapter';
+export async function installDesktopFixture(
+  page: Page,
+  multiple = false,
+  custom: Record<string, unknown>[] | null = null,
+) {
+  await page.exposeFunction('__evaluatePipeline', evaluateNative);
   await page.addInitScript(
-    ({ multiple }) => {
+    ({ multiple, custom }) => {
       const host = window as unknown as Record<string, any>;
-      const initial = [
+      const initial = (custom ?? [
         {
           id: 'fixture-1',
           path: '/fixture/report 01.txt',
@@ -35,7 +41,15 @@ export async function installDesktopFixture(page: Page, multiple = false) {
               },
             ]
           : []),
-      ];
+      ]) as {
+        id: string;
+        path: string;
+        name: string;
+        extension: string;
+        size: number;
+        modified: number;
+        policy: string;
+      }[];
       let files = structuredClone(initial),
         history: any[] = [];
       host.fixtureCalls = [];
@@ -60,6 +74,14 @@ export async function installDesktopFixture(page: Page, multiple = false) {
           if (cmd === 'plugin:dialog|open')
             return args.options?.directory ? '/fixture/destination' : initial.map((f) => f.path);
           if (cmd === 'add_files' || cmd === 'list_files') return structuredClone(files);
+          if (cmd === 'evaluate_pipeline')
+            return host.__evaluatePipeline({
+              files: args.ids.map((id: string) => files.find((f) => f.id === id)),
+              steps: args.steps,
+              options: args.options,
+              edits: args.edits,
+              examples: args.examples,
+            });
           if (cmd === 'set_policy') {
             files = files.map((f) => (args.ids.includes(f.id) ? { ...f, policy: args.policy } : f));
             return structuredClone(files);
@@ -67,14 +89,27 @@ export async function installDesktopFixture(page: Page, multiple = false) {
           if (cmd === 'preview')
             return args.changes.map((c: { id: string; name: string }) => {
               const file = files.find((f) => f.id === c.id)!;
+              const parent = file.path.slice(0, file.path.lastIndexOf('/'));
               const target =
-                (args.operation === 'rename' ? '/fixture' : args.destination) + '/' + c.name;
+                (args.operation === 'rename' ? parent : args.destination) + '/' + c.name;
+              const count = args.changes.filter((other: { id: string; name: string }) => {
+                const f = files.find((f) => f.id === other.id)!;
+                return (
+                  (
+                    (args.operation === 'rename'
+                      ? f.path.slice(0, f.path.lastIndexOf('/'))
+                      : args.destination) +
+                    '/' +
+                    other.name
+                  ).toLowerCase() === target.toLowerCase()
+                );
+              }).length;
               return {
                 id: c.id,
                 name: c.name,
                 source: file.path,
                 target,
-                error: null,
+                error: count > 1 ? '目标名称重复' : null,
                 changed: target !== file.path,
               };
             });
@@ -91,6 +126,9 @@ export async function installDesktopFixture(page: Page, multiple = false) {
               endpoint: 'https://fixture.invalid/v1/chat/completions',
               model: 'fixture-model',
               count: accepted.length,
+              reference_ids: accepted.map((f) => f.id),
+              total_allowed: accepted.length,
+              omitted: 0,
               skipped: files
                 .filter((f) => args.ids.includes(f.id) && !accepted.includes(f))
                 .map((f) => ({ name: f.name, reason: '隐私策略禁止本次处理' })),
@@ -105,6 +143,14 @@ export async function installDesktopFixture(page: Page, multiple = false) {
                     content: [
                       {
                         type: 'text',
+                        text: JSON.stringify({
+                          instruction: args.options.instruction,
+                          current_rules: args.options.current_rules,
+                          examples: args.options.examples,
+                        }),
+                      },
+                      {
+                        type: 'text',
                         text: JSON.stringify(
                           accepted.map((f) =>
                             args.options.task === 'rules'
@@ -112,7 +158,9 @@ export async function installDesktopFixture(page: Page, multiple = false) {
                               : {
                                   id: f.id,
                                   name: f.name,
-                                  content: 'FILE_CONTENT_FIXTURE_FOR_CONSENT',
+                                  content: args.options.content
+                                    ? 'FILE_CONTENT_FIXTURE_FOR_CONSENT'
+                                    : null,
                                 },
                           ),
                         ),
@@ -150,7 +198,7 @@ export async function installDesktopFixture(page: Page, multiple = false) {
         },
       };
     },
-    { multiple },
+    { multiple, custom },
   );
 }
 export function ipcCalls(page: Page, cmd: string) {

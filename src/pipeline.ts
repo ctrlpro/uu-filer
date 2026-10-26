@@ -1,6 +1,17 @@
-import { splitName, type Change, type FileEntry, type Rules } from './domain';
+import { invalidName, splitName, type Change, type FileEntry, type Rules } from './domain';
+import {
+  expressionCatalog,
+  expressionDefaults,
+  expressionProblem,
+  parseExpression,
+  containsFileNames,
+  type Expression,
+} from './expressions';
+import type { Suggestion } from './types';
+import { parseScheme, type SchemeOptions } from './scheme';
 
 interface Parameters {
+  expression: Expression;
   replace: { find: string; replacement: string };
   prefix: { text: string };
   suffix: { text: string };
@@ -26,6 +37,8 @@ export interface RuleStep {
 export interface RuleDraft {
   rules: Rule[];
   explanation: string;
+  suggestions?: Suggestion[];
+  options?: SchemeOptions;
 }
 export interface RuleCatalogEntry {
   id: string;
@@ -43,6 +56,14 @@ export function localDate(date = new Date()) {
   ].join('-');
 }
 export const ruleCatalog: RuleCatalogEntry[] = [
+  ...expressionCatalog.map((d) => ({
+    id: `expr-${d.op}`,
+    name: d.name,
+    category: d.category,
+    example: d.example,
+    symbol: 'ƒ',
+    create: (): Rule => ({ kind: 'expression', params: expressionDefaults(d.op) }),
+  })),
   {
     id: 'replace',
     name: '查找替换',
@@ -89,7 +110,7 @@ export const ruleCatalog: RuleCatalogEntry[] = [
     category: '清理与规范',
     example: '末尾副本 / copy / 括号序号',
     symbol: '−',
-    create: () => ({ kind: 'cleanCopies', params: {} }),
+    create: () => ({ kind: 'expression', params: expressionDefaults('clean') }),
   },
   {
     id: 'strip',
@@ -97,7 +118,15 @@ export const ruleCatalog: RuleCatalogEntry[] = [
     category: '清理与规范',
     example: '清理 []、【】、!、@ 等符号',
     symbol: '✦',
-    create: () => ({ kind: 'stripSpecial', params: {} }),
+    create: () => ({
+      kind: 'expression',
+      params: {
+        ...expressionDefaults('clean'),
+        characters: '[]【】!！@#$%^&',
+        copyMarkers: false,
+        separators: '',
+      },
+    }),
   },
   {
     id: 'lower',
@@ -155,12 +184,30 @@ export const ruleCatalog: RuleCatalogEntry[] = [
   },
 ];
 export function ruleTitle(rule: Rule) {
-  if (rule.kind === 'aiNames') return 'AI 内容命名';
+  if (rule.kind === 'expression')
+    return expressionCatalog.find((d) => d.op === rule.params.op)?.name ?? '表达式';
+  if (rule.kind === 'aiNames') return 'AI 逐文件命名';
+  if (rule.kind === 'cleanCopies') return '清理副本（旧版）';
+  if (rule.kind === 'stripSpecial') return '去特殊字符（旧版）';
   if (rule.kind === 'case') return rule.params.mode === 'upper' ? '统一大写' : '统一小写';
   return ruleCatalog.find((p) => p.create().kind === rule.kind)?.name ?? rule.kind;
 }
 export function describeRule(rule: Rule): string {
   switch (rule.kind) {
+    case 'expression': {
+      const p = rule.params;
+      return String(
+        p.op === 'template'
+          ? p.text
+          : p.op === 'extract'
+            ? p.pattern
+            : p.op === 'guard'
+              ? '条件匹配 → 分支处理'
+              : p.op === 'sequence'
+                ? `${p.start} 起 · 步长 ${p.step} · ${p.group}`
+                : (expressionCatalog.find((d) => d.op === p.op)?.example ?? p.op),
+      );
+    }
     case 'prefix':
       return rule.params.text || '待填写前缀';
     case 'suffix':
@@ -298,10 +345,15 @@ export function validDate(value: string) {
     day <= [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
   );
 }
-export function parseRule(value: unknown): Rule | null {
+export function parseRule(value: unknown, depth = 0): Rule | null {
+  if (depth > 4) return null;
   if (!object(value) || !exactKeys(value, ['kind', 'params']) || !object(value.params)) return null;
   const p = value.params;
   switch (value.kind) {
+    case 'expression': {
+      const p = parseExpression(value.params, depth, parseRule);
+      return p ? { kind: 'expression', params: p } : null;
+    }
     case 'trim':
     case 'cleanCopies':
     case 'stripSpecial':
@@ -370,6 +422,8 @@ export function ruleError(rule: Rule): string | null {
   const fragment = (s: string) =>
     /[<>:"/\\|?*\x00-\x1f\x7f]/.test(s) ? '名称参数包含非法字符' : null;
   switch (rule.kind) {
+    case 'expression':
+      return expressionProblem(rule.params, parseRule);
     case 'replace':
       return !rule.params.find ? '请填写查找内容' : fragment(rule.params.replacement);
     case 'prefix':
@@ -384,22 +438,57 @@ export function ruleError(rule: Rule): string | null {
       return null;
   }
 }
-export function parseRuleDraft(value: unknown): RuleDraft {
+export function parseRuleDraft(value: unknown, entries: FileEntry[] = []): RuleDraft {
   if (
     !object(value) ||
-    !exactKeys(value, ['rules', 'explanation']) ||
+    !Object.hasOwn(value, 'rules') ||
+    !Object.hasOwn(value, 'explanation') ||
+    Object.keys(value).some(
+      (k) => !['rules', 'explanation', 'suggestions', 'options'].includes(k),
+    ) ||
     !Array.isArray(value.rules) ||
-    value.rules.length < 1 ||
     value.rules.length > 32 ||
     !text(value.explanation, 4000)
   )
     throw new Error('AI 规则草案格式无效');
   const rules = value.rules.map((v) => {
     const rule = parseRule(v);
-    if (!rule || ruleError(rule)) throw new Error('AI 返回了不支持的规则或无效参数');
+    if (!rule || ruleError(rule) || containsFileNames(rule))
+      throw new Error('AI 返回了不支持的规则或无效参数');
     return rule;
   });
-  return { rules, explanation: value.explanation };
+  const suggestions: Suggestion[] = [];
+  if (value.suggestions !== undefined) {
+    if (!Array.isArray(value.suggestions) || value.suggestions.length > 200)
+      throw new Error('逐文件方案格式无效');
+    const seen = new Set();
+    for (const s of value.suggestions) {
+      if (
+        !object(s) ||
+        !exactKeys(s, ['id', 'name', 'reason']) ||
+        !text(s.id, 128) ||
+        !text(s.name, 240) ||
+        !text(s.reason, 4000) ||
+        seen.has(s.id) ||
+        invalidName(s.name)
+      )
+        throw new Error('逐文件方案含非法名称或重复标识');
+      const file = entries.find((f) => f.id === s.id);
+      if (!file || splitName(file.name)[1].toLowerCase() !== splitName(s.name)[1].toLowerCase())
+        throw new Error('逐文件方案含未知文件或修改了扩展名');
+      seen.add(s.id);
+      suggestions.push({ id: s.id, name: s.name, reason: s.reason });
+    }
+  }
+  const options = value.options === undefined ? undefined : parseScheme(value.options);
+  if (options === null) throw new Error('AI 返回了无效方案选项');
+  if (!rules.length && !suggestions.length && !options) throw new Error('AI 未生成可用方案');
+  return {
+    rules,
+    explanation: value.explanation,
+    ...(suggestions.length ? { suggestions } : {}),
+    ...(options ? { options } : {}),
+  };
 }
 export function parseSavedSteps(value: unknown): RuleStep[] | null {
   if (!Array.isArray(value) || value.length > 64) return null;
@@ -407,7 +496,7 @@ export function parseSavedSteps(value: unknown): RuleStep[] | null {
   for (const item of value) {
     if (!object(item) || typeof item.enabled !== 'boolean') return null;
     const rule = parseRule(item.rule);
-    if (!rule) return null;
+    if (!rule || containsFileNames(rule)) return null;
     output.push({ ...makeStep(rule), enabled: item.enabled });
   }
   return output;

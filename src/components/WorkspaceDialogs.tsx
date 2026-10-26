@@ -1,10 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { History, LockKeyhole, ShieldCheck, ShieldOff, Undo2 } from 'lucide-react';
 import type { Workspace } from '../useWorkspace';
 import type { AppearanceController } from '../useAppearance';
 import { AppearanceControls } from './AppearanceControls';
 import { Modal } from './Modal';
 import { describeRule, ruleTitle } from '../pipeline';
+import { draftSteps } from '../useWorkspace';
+import type { EngineReport } from '../engine';
+import { ExpressionEditor, LegacyFields } from './ExpressionEditor';
 export type SettingsTab = 'appearance' | 'ai' | 'privacy';
 export function WorkspaceDialogs({
   w,
@@ -82,6 +85,13 @@ export function WorkspaceDialogs({
                 : '参考下列文件名及选定内容。'}
               授权 5 分钟有效，文件或权限变化会取消任务。
             </p>
+            {!!w.prepared.omitted && (
+              <p className="form-note">
+                本次发送 {w.prepared.count} / {w.prepared.total_allowed}{' '}
+                个允许参考的文件名，按扩展名和命名结构分组轮流取样；其余 {w.prepared.omitted}{' '}
+                个未发送。实际操作仍限于当前选择。
+              </p>
+            )}
             {w.prepared.payload.messages.map((message, i) => (
               <div className="payload-block" key={i}>
                 <span>{message.role === 'system' ? '系统约束' : '命名要求与文件数据'}</span>
@@ -343,11 +353,56 @@ function AiRuleDraftDialog({ w }: { w: Workspace }) {
   const [mode, setMode] = useState<'append' | 'replace'>('append'),
     [confirmed, setConfirmed] = useState(false);
   const draft = w.aiDraft!;
-  const projected = (mode === 'append' ? w.steps.length : 0) + draft.rules.length;
+  const projectedSteps = useMemo(() => draftSteps(draft, w.steps, mode), [draft, w.steps, mode]);
+  const projected = projectedSteps.length;
+  const [report, setReport] = useState<EngineReport | null>(null),
+    [failure, setFailure] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    setReport(null);
+    setFailure('');
+    if (projected > 64) return;
+    const timer = setTimeout(() => {
+      w.inspectRules(projectedSteps, w.draftExamples, {}, draft.options)
+        .then((r) => {
+          if (!cancelled) setReport(r);
+        })
+        .catch((e) => {
+          if (!cancelled) setFailure(String(e));
+        });
+    }, 120);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [projectedSteps, w.inspectRules, w.draftExamples, projected, draft.options]);
+  const invalid =
+    !report ||
+    report.details.length === 0 ||
+    report.details.some((d) => d.error) ||
+    report.examples.some((e) => !e.passed);
   return (
     <Modal title="AI 规则草案" wide onClose={() => w.setAiDraft(null)}>
       <div className="modal-body">
         <p className="form-note">{draft.explanation}</p>
+        {draft.options && (
+          <p className="form-note">
+            方案选项：
+            {
+              {
+                input: '导入顺序',
+                natural: '名称自然排序',
+                name: '名称文字排序',
+                modified: '修改时间排序',
+                size: '大小排序',
+              }[draft.options.sort]
+            }{' '}
+            · {draft.options.descending ? '降序' : '升序'} ·{' '}
+            {draft.options.extensionMode === 'compound'
+              ? '识别常见复合扩展名'
+              : '使用最后一段扩展名'}
+          </p>
+        )}
         <ol className="ai-draft-list">
           {draft.rules.map((rule, i) => (
             <li key={i}>
@@ -355,10 +410,55 @@ function AiRuleDraftDialog({ w }: { w: Workspace }) {
               <div>
                 <strong>{ruleTitle(rule)}</strong>
                 <small>{describeRule(rule)}</small>
+                <details>
+                  <summary>编辑规则参数</summary>
+                  {rule.kind === 'expression' ? (
+                    <ExpressionEditor
+                      value={rule.params}
+                      onChange={(params) =>
+                        w.setAiDraft({
+                          ...draft,
+                          rules: draft.rules.map((r, n) =>
+                            n === i ? { kind: 'expression', params } : r,
+                          ),
+                        })
+                      }
+                    />
+                  ) : (
+                    <LegacyFields
+                      rule={rule}
+                      onChange={(next) =>
+                        w.setAiDraft({
+                          ...draft,
+                          rules: draft.rules.map((r, n) => (n === i ? next : r)),
+                        })
+                      }
+                    />
+                  )}
+                </details>
+                {rule.kind === 'expression' && (
+                  <details>
+                    <summary>查看表达式参数</summary>
+                    <pre>{JSON.stringify(rule.params, null, 2)}</pre>
+                  </details>
+                )}
               </div>
             </li>
           ))}
         </ol>
+        {!!draft.suggestions?.length && (
+          <details className="draft-suggestions">
+            <summary>逐文件基础名称 · {draft.suggestions.length} 项（先运行，再叠加规则）</summary>
+            {draft.suggestions.map((s) => (
+              <div key={s.id}>
+                <strong>
+                  {w.files.find((f) => f.id === s.id)?.name} → {s.name}
+                </strong>
+                <p>{s.reason}</p>
+              </div>
+            ))}
+          </details>
+        )}
         <div className="adoption-options" role="group" aria-label="应用 AI 草案的方式">
           <label>
             <input
@@ -398,6 +498,15 @@ function AiRuleDraftDialog({ w }: { w: Workspace }) {
         {projected > 64 && (
           <p className="validation-error">规则总数超过 64 条，请选择替换或先移除部分规则。</p>
         )}
+        {failure ? (
+          <p className="validation-error" role="alert">
+            {failure}
+          </p>
+        ) : report ? (
+          <DraftPreview report={report} w={w} />
+        ) : (
+          <p className="form-note">正在全部操作对象上验证方案…</p>
+        )}
         <p className="form-note ai-safety-note">
           加入后可编辑、排序和查看文件预览；此处不会执行文件操作。
         </p>
@@ -406,12 +515,86 @@ function AiRuleDraftDialog({ w }: { w: Workspace }) {
         <button onClick={() => w.setAiDraft(null)}>放弃草案</button>
         <button
           className="primary"
-          disabled={projected > 64 || (mode === 'replace' && w.steps.length > 0 && !confirmed)}
-          onClick={() => w.adoptAiDraft(mode)}
+          disabled={
+            !!w.busy ||
+            invalid ||
+            projected > 64 ||
+            (mode === 'replace' && w.steps.length > 0 && !confirmed)
+          }
+          onClick={() => void w.adoptAiDraft(mode)}
         >
           加入应用区并预览
         </button>
       </div>
     </Modal>
+  );
+}
+function DraftPreview({ report, w }: { report: EngineReport; w: Workspace }) {
+  const [filter, setFilter] = useState('all'),
+    [page, setPage] = useState(0);
+  const list = report.details.filter(
+    (d) =>
+      filter === 'all' ||
+      (filter === 'error'
+        ? !!d.error
+        : filter === 'unmatched'
+          ? d.unmatched || d.status === 'unmatched'
+          : d.status === filter),
+  );
+  const pages = Math.max(1, Math.ceil(list.length / 50));
+  const current = Math.min(page, pages - 1);
+  return (
+    <section className="draft-preview" aria-label="AI 方案试算">
+      <div className="section-row">
+        <h3>全部操作对象试算</h3>
+        <span>
+          {report.details.filter((d) => d.status === 'changed').length} 更改 ·{' '}
+          {report.details.filter((d) => d.status === 'unchanged').length} 原样 ·{' '}
+          {report.details.filter((d) => d.unmatched || d.status === 'unmatched').length} 未匹配 ·{' '}
+          {report.details.filter((d) => d.error).length} 问题
+        </span>
+      </div>
+      {report.examples.map((e, i) => (
+        <p className={e.passed ? 'form-note' : 'validation-error'} key={i}>
+          目标示例 {i + 1}：
+          {e.passed ? '通过' : `未满足，预期 ${e.expected}，实际 ${e.actual ?? '未选入操作范围'}`}
+        </p>
+      ))}
+      <select
+        aria-label="草案试算筛选"
+        value={filter}
+        onChange={(e) => {
+          setFilter(e.target.value);
+          setPage(0);
+        }}
+      >
+        <option value="all">全部结果</option>
+        <option value="error">问题项</option>
+        <option value="unmatched">未匹配</option>
+        <option value="changed">有更改</option>
+      </select>
+      <div className="draft-preview-list">
+        {list.slice(current * 50, (current + 1) * 50).map((d) => (
+          <div key={d.id}>
+            <span>{w.files.find((f) => f.id === d.id)?.name}</span>
+            <strong>{d.name}</strong>
+            {d.error && <small className="validation-error">{d.error}</small>}
+          </div>
+        ))}
+      </div>
+      {pages > 1 && (
+        <div className="nested-actions">
+          <button disabled={current === 0} onClick={() => setPage(current - 1)}>
+            上一页
+          </button>
+          <span>
+            {current + 1} / {pages}
+          </span>
+          <button disabled={current === pages - 1} onClick={() => setPage(current + 1)}>
+            下一页
+          </button>
+        </div>
+      )}
+    </section>
   );
 }

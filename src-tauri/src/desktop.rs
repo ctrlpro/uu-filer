@@ -128,6 +128,24 @@ async fn preview(
     .await
 }
 #[tauri::command]
+async fn evaluate_pipeline(
+    state: tauri::State<'_, Shared>,
+    ids: Vec<String>,
+    steps: Vec<crate::engine::Step>,
+    options: crate::engine::Options,
+    edits: HashMap<String, String>,
+    examples: Vec<crate::engine::Example>,
+) -> Result<crate::engine::Report> {
+    work(state, move |w, _| {
+        let entries = ids
+            .iter()
+            .map(|id| w.entries.get(id).cloned().ok_or("未知文件".into()))
+            .collect::<Result<Vec<_>>>()?;
+        crate::engine::evaluate(&entries, &steps, &options, &edits, &examples)
+    })
+    .await
+}
+#[tauri::command]
 async fn execute(
     state: tauri::State<'_, Shared>,
     changes: Vec<Change>,
@@ -306,6 +324,7 @@ pub fn run() {
             set_policy,
             set_directory_policy,
             preview,
+            evaluate_pipeline,
             execute,
             history,
             undo,

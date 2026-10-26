@@ -1,8 +1,11 @@
 import { defaultRules, type Rules } from './domain';
 import { legacySteps, parseSavedSteps, type RuleStep } from './pipeline';
+import { legacyScheme, parseScheme, type SchemeOptions } from './engine';
 export interface Preset {
   name: string;
   steps: RuleStep[];
+  version?: 3;
+  options?: SchemeOptions;
 }
 export interface BuiltinPreset {
   id: string;
@@ -129,8 +132,10 @@ export function readPresets(value: string | null): Preset[] {
     return list.flatMap((p): Preset[] => {
       if (!p || typeof p !== 'object' || typeof p.name !== 'string' || !p.name.trim()) return [];
       if (Object.hasOwn(p, 'steps')) {
+        if (p.version !== undefined && p.version !== 3) return [];
         const steps = parseSavedSteps(p.steps);
-        return steps ? [{ name: p.name, steps }] : [];
+        const options = p.version === 3 ? parseScheme(p.options) : legacyScheme;
+        return steps && options ? [{ name: p.name, steps, version: 3, options }] : [];
       }
       if (!p.rules || typeof p.rules !== 'object') return [];
       const r = p.rules;
@@ -153,7 +158,16 @@ export function readPresets(value: string | null): Preset[] {
           'removeLeadingNumber',
           'extensionLower',
         ].every((k) => r[k] === undefined || typeof r[k] === 'boolean');
-      return valid ? [{ name: p.name, steps: legacySteps({ ...defaultRules, ...r }) }] : [];
+      return valid
+        ? [
+            {
+              name: p.name,
+              steps: legacySteps({ ...defaultRules, ...r }),
+              version: 3,
+              options: legacyScheme,
+            },
+          ]
+        : [];
     });
   } catch {
     return [];

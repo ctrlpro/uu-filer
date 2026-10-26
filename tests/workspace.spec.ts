@@ -56,9 +56,9 @@ test('ordered rules stack, reorder, duplicate and show intermediate output', asy
     '项目 A_采购合同.pdf',
   );
   await page.getByRole('tab', { name: '规则库', exact: false }).click();
-  await expect(page.locator('.preset-item')).toHaveCount(13);
+  await expect(page.locator('.preset-item')).toHaveCount(27);
   await page.getByLabel('搜索规则库', { exact: true }).fill('日期');
-  await expect(page.locator('.preset-item')).toHaveCount(1);
+  await expect(page.locator('.preset-item')).toHaveCount(4);
 });
 
 test('browser AI and disk execution stay disabled and settings clear the key on Escape', async ({

@@ -287,6 +287,15 @@ export default function App() {
           </label>
           <button onClick={w.invertVisible}>反选</button>
           <span className="push" />
+          <select
+            aria-label="预览状态筛选"
+            value={w.statusFilter}
+            onChange={(e) => w.setStatusFilter(e.target.value as typeof w.statusFilter)}
+          >
+            <option value="all">全部状态</option>
+            <option value="problems">问题项</option>
+            <option value="unmatched">未匹配</option>
+          </select>
           <button
             className={w.onlyChanged ? 'active' : ''}
             aria-pressed={w.onlyChanged}
@@ -311,7 +320,7 @@ export default function App() {
         {!w.desktop && w.files.length === 0 && (
           <div className="demo-note">
             <Info size={12} />
-            浏览器仅预览规则；文件操作与 AI 请使用桌面应用。
+            浏览器演示基础规则；高级规则、文件操作与 AI 使用桌面应用。
           </div>
         )}
         {w.notice?.text && (
@@ -387,7 +396,7 @@ export default function App() {
             更改 <b data-testid="changed-count">{w.changed}</b>
           </span>
           <span className={w.conflicts ? 'conflict-count' : ''}>
-            冲突 <b>{w.conflicts}</b>
+            问题 <b>{w.conflicts}</b>
           </span>
         </div>
         <div className="top-spacer" />

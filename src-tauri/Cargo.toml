@@ -31,6 +31,10 @@ base64 = "0.22"
 sha2 = "0.10"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 pdf-extract = "0.10"
+regex = "1"
+unicode-segmentation = "1"
+unicode-normalization = "0.1"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 tauri = { version = "2", optional = true, features = [] }
 tauri-plugin-dialog = { version = "2", optional = true }
 keyring = { version = "3", optional = true, features = ["apple-native", "windows-native"] }

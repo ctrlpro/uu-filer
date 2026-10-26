@@ -1,0 +1,392 @@
+[
+  {
+    "op": "replace",
+    "name": "高级查找替换",
+    "category": "文本处理",
+    "example": "文字 / 正则 · 首个、全部或第 N 次",
+    "fields": [
+      { "key": "pattern", "label": "查找表达式", "type": "text", "default": "" },
+      {
+        "key": "replacement",
+        "label": "替换内容",
+        "type": "text",
+        "default": "",
+        "help": "正则捕获组：${1} 或 ${客户}；文字模式按字面替换"
+      },
+      { "key": "regex", "label": "正则模式", "type": "bool", "default": false },
+      { "key": "caseSensitive", "label": "区分大小写", "type": "bool", "default": true },
+      {
+        "key": "occurrence",
+        "label": "替换第几次（0 为全部）",
+        "type": "number",
+        "default": 0,
+        "min": 0,
+        "max": 10000
+      },
+      {
+        "key": "target",
+        "label": "作用范围",
+        "type": "enum",
+        "default": "name",
+        "options": [
+          ["name", "名称"],
+          ["extension", "扩展名"],
+          ["full", "完整文件名"]
+        ]
+      }
+    ]
+  },
+  {
+    "op": "edit",
+    "name": "插入删除与截取",
+    "category": "文本处理",
+    "example": "指定位置或文字前后，按可见字符计数",
+    "fields": [
+      {
+        "key": "action",
+        "label": "编辑方式",
+        "type": "enum",
+        "default": "insert",
+        "options": [
+          ["insert", "插入"],
+          ["remove", "删除"],
+          ["keep", "仅保留区间"]
+        ]
+      },
+      {
+        "key": "anchor",
+        "label": "定位方式",
+        "type": "enum",
+        "default": "start",
+        "options": [
+          ["start", "从左"],
+          ["end", "从右"],
+          ["before", "指定文字之前"],
+          ["after", "指定文字之后"]
+        ]
+      },
+      {
+        "key": "position",
+        "label": "位置偏移（0 为边界）",
+        "type": "number",
+        "default": 0,
+        "min": 0,
+        "max": 10000
+      },
+      {
+        "key": "length",
+        "label": "区间字符数",
+        "type": "number",
+        "default": 1,
+        "min": 0,
+        "max": 10000
+      },
+      { "key": "marker", "label": "定位文字", "type": "text", "default": "" },
+      { "key": "text", "label": "插入文字", "type": "text", "default": "_" }
+    ]
+  },
+  {
+    "op": "clean",
+    "name": "自定义清理",
+    "category": "清理与规范",
+    "example": "字符、括号内容、副本标记、重复分隔符",
+    "fields": [
+      { "key": "characters", "label": "删除这些字符", "type": "text", "default": "" },
+      { "key": "keep", "label": "保留字符（优先）", "type": "text", "default": "" },
+      { "key": "brackets", "label": "删除括号及内容", "type": "bool", "default": false },
+      { "key": "copyMarkers", "label": "删除末尾副本 / copy", "type": "bool", "default": true },
+      { "key": "bracketNumbers", "label": "删除末尾括号数字", "type": "bool", "default": false },
+      { "key": "spaces", "label": "合并空白并去除首尾空白", "type": "bool", "default": false },
+      { "key": "separators", "label": "合并重复的分隔符", "type": "text", "default": "_" },
+      { "key": "invisible", "label": "去除零宽及方向控制字符", "type": "bool", "default": false }
+    ]
+  },
+  {
+    "op": "normalize",
+    "name": "字符宽度与规范化",
+    "category": "清理与规范",
+    "example": "全角 ASCII 转半角 / 半角转全角 / NFC",
+    "fields": [
+      {
+        "key": "mode",
+        "label": "转换方式",
+        "type": "enum",
+        "default": "half",
+        "options": [
+          ["half", "全角 ASCII 转半角"],
+          ["full", "半角 ASCII 转全角"],
+          ["nfc", "Unicode NFC"]
+        ]
+      }
+    ]
+  },
+  {
+    "op": "letterCase",
+    "name": "词首大小写",
+    "category": "清理与规范",
+    "example": "词首大写；保留分隔符",
+    "fields": [
+      {
+        "key": "mode",
+        "label": "转换方式",
+        "type": "enum",
+        "default": "title",
+        "options": [
+          ["title", "词首大写"],
+          ["lower", "小写"],
+          ["upper", "大写"]
+        ]
+      }
+    ]
+  },
+  {
+    "op": "extract",
+    "name": "正则提取字段",
+    "category": "提取与模板",
+    "example": "提取客户、日期和编号，供后续模板使用",
+    "fields": [
+      {
+        "key": "pattern",
+        "label": "提取表达式",
+        "type": "text",
+        "default": "^(?P<客户>.+)-(?P<日期>[0-9]{8})-(?P<编号>.+)$",
+        "help": "命名捕获组 (?P<客户>...)；也可在模板使用 {1}、{2}"
+      },
+      {
+        "key": "source",
+        "label": "提取来源",
+        "type": "enum",
+        "default": "current",
+        "options": [
+          ["current", "当前名称"],
+          ["original", "原始名称"]
+        ]
+      },
+      { "key": "required", "label": "无法匹配时标记问题", "type": "bool", "default": true }
+    ]
+  },
+  {
+    "op": "split",
+    "name": "按分隔符提取字段",
+    "category": "提取与模板",
+    "example": "用 {1}、{2}、{3} 在模板中重组",
+    "fields": [
+      { "key": "separator", "label": "字段分隔符", "type": "text", "default": "_" },
+      {
+        "key": "source",
+        "label": "提取来源",
+        "type": "enum",
+        "default": "current",
+        "options": [
+          ["current", "当前名称"],
+          ["original", "原始名称"]
+        ]
+      }
+    ]
+  },
+  {
+    "op": "template",
+    "name": "模板重组",
+    "category": "提取与模板",
+    "example": "{日期}_{客户}_{编号} · 原名、父目录与时间变量",
+    "fields": [
+      {
+        "key": "text",
+        "label": "命名模板",
+        "type": "text",
+        "default": "{name}",
+        "help": "{original} {name} {parent} {size} {字段名} {1} {modified:YYYY-MM-DD} {today:YYYY-MM-DD}；扩展名默认另行保留"
+      }
+    ]
+  },
+  {
+    "op": "guard",
+    "name": "条件与分支",
+    "category": "条件与映射",
+    "example": "符合条件才处理；可设置否则分支",
+    "fields": [
+      {
+        "key": "condition",
+        "label": "应用条件",
+        "type": "condition",
+        "default": {
+          "kind": "test",
+          "field": "name",
+          "operator": "starts",
+          "value": "项目_",
+          "negate": true
+        }
+      },
+      {
+        "key": "rules",
+        "label": "满足条件",
+        "type": "rules",
+        "default": [{ "kind": "prefix", "params": { "text": "项目_" } }]
+      },
+      { "key": "otherwise", "label": "否则", "type": "rules", "default": [] }
+    ]
+  },
+  {
+    "op": "map",
+    "name": "批量文字映射",
+    "category": "条件与映射",
+    "example": "部门简称、客户名称标准化",
+    "fields": [
+      {
+        "key": "pairs",
+        "label": "映射表",
+        "type": "pairs",
+        "default": [{ "from": "研发中心", "to": "研发" }],
+        "help": "每行：原文字 → 新文字；一次匹配，不级联替换"
+      },
+      {
+        "key": "mode",
+        "label": "匹配方式",
+        "type": "enum",
+        "default": "partial",
+        "options": [
+          ["partial", "替换局部文字"],
+          ["exact", "整个名称匹配"]
+        ]
+      },
+      { "key": "required", "label": "未命中时标记问题", "type": "bool", "default": false }
+    ]
+  },
+  {
+    "op": "sequence",
+    "name": "分组与步长编号",
+    "category": "编号与归档",
+    "example": "稳定排序，按目录或字段重新编号",
+    "fields": [
+      {
+        "key": "start",
+        "label": "起始值",
+        "type": "number",
+        "default": 1,
+        "min": 0,
+        "max": 999999
+      },
+      {
+        "key": "step",
+        "label": "步长",
+        "type": "number",
+        "default": 1,
+        "min": -999999,
+        "max": 999999
+      },
+      { "key": "digits", "label": "补零位数", "type": "number", "default": 3, "min": 1, "max": 12 },
+      {
+        "key": "position",
+        "label": "编号位置",
+        "type": "enum",
+        "default": "suffix",
+        "options": [
+          ["prefix", "前置"],
+          ["suffix", "后置"],
+          ["replace", "仅保留编号"]
+        ]
+      },
+      { "key": "separator", "label": "分隔符", "type": "text", "default": "_" },
+      {
+        "key": "group",
+        "label": "编号分组",
+        "type": "enum",
+        "default": "none",
+        "options": [
+          ["none", "全局"],
+          ["parent", "按目录"],
+          ["field", "按提取字段"]
+        ]
+      },
+      { "key": "field", "label": "分组字段名", "type": "text", "default": "客户" }
+    ]
+  },
+  {
+    "op": "digits",
+    "name": "已有数字调整",
+    "category": "编号与归档",
+    "example": "第9集 → 第010集（加 1 并补三位）",
+    "fields": [
+      {
+        "key": "delta",
+        "label": "数字增减",
+        "type": "number",
+        "default": 0,
+        "min": -999999,
+        "max": 999999
+      },
+      { "key": "digits", "label": "补零位数", "type": "number", "default": 3, "min": 1, "max": 12 },
+      {
+        "key": "occurrence",
+        "label": "处理第几组数字（0 为全部）",
+        "type": "number",
+        "default": 1,
+        "min": 0,
+        "max": 10000
+      }
+    ]
+  },
+  {
+    "op": "dateFormat",
+    "name": "日期识别与转换",
+    "category": "日期与扩展名",
+    "example": "2026年1月5日 / 20260105 → 2026-01-05",
+    "fields": [
+      {
+        "key": "source",
+        "label": "日期来源",
+        "type": "enum",
+        "default": "name",
+        "options": [
+          ["name", "当前名称"],
+          ["field", "提取字段"],
+          ["modified", "文件修改时间"],
+          ["today", "设备当天（预览时固定）"]
+        ]
+      },
+      { "key": "field", "label": "字段名", "type": "text", "default": "日期" },
+      {
+        "key": "input",
+        "label": "输入格式",
+        "type": "text",
+        "default": "YYYYMMDD",
+        "help": "YYYY、MM / M、DD / D、HH、mm、ss；日期顺序必须明确"
+      },
+      { "key": "output", "label": "输出格式", "type": "text", "default": "YYYY-MM-DD" },
+      {
+        "key": "mode",
+        "label": "输出方式",
+        "type": "enum",
+        "default": "replace",
+        "options": [
+          ["replace", "替换名称中的日期"],
+          ["field", "写回提取字段"],
+          ["prefix", "添加到前面"],
+          ["suffix", "添加到后面"]
+        ]
+      },
+      { "key": "separator", "label": "分隔符", "type": "text", "default": "_" }
+    ]
+  },
+  {
+    "op": "extension",
+    "name": "修改扩展名",
+    "category": "日期与扩展名",
+    "example": "只改名称，不转换文件格式",
+    "fields": [
+      {
+        "key": "action",
+        "label": "处理方式",
+        "type": "enum",
+        "default": "lower",
+        "options": [
+          ["lower", "统一小写"],
+          ["upper", "统一大写"],
+          ["set", "设置扩展名"],
+          ["remove", "移除扩展名"]
+        ]
+      },
+      { "key": "text", "label": "新扩展名（不含开头的点）", "type": "text", "default": "jpg" }
+    ]
+  }
+]

@@ -17,6 +17,9 @@ export interface Prepared {
   };
   skipped: { name: string; reason: string }[];
   count: number;
+  reference_ids?: string[];
+  total_allowed?: number;
+  omitted?: number;
 }
 export interface HistoryItem {
   id: string;

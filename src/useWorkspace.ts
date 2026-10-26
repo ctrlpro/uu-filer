@@ -13,7 +13,6 @@ import {
 } from './domain';
 import { readPresets, type Preset } from './presets';
 import {
-  applyPipeline,
   localDate,
   catalogStep,
   makeStep,
@@ -26,6 +25,17 @@ import {
   type RuleDraft,
 } from './pipeline';
 import type { Prepared, Suggestion, HistoryItem } from './types';
+import { containsFileNames } from './expressions';
+import {
+  defaultScheme,
+  legacyScheme,
+  evaluateDemo,
+  orderFiles,
+  type EngineReport,
+  type EngineOptions,
+  type SchemeOptions,
+  type Example,
+} from './engine';
 
 const desktop = isTauri();
 interface ExecutionDraft {
@@ -34,12 +44,48 @@ interface ExecutionDraft {
   destination: string | null;
   count: number;
 }
+export function draftSteps(
+  draft: RuleDraft,
+  existing: RuleStep[],
+  mode: 'append' | 'replace',
+): RuleStep[] {
+  const names = draft.suggestions?.length
+    ? [
+        makeStep(
+          {
+            kind: 'aiNames',
+            params: {
+              names: Object.fromEntries(draft.suggestions.map((s) => [s.id, s.name])),
+              reasons: Object.fromEntries(draft.suggestions.map((s) => [s.id, s.reason])),
+            },
+          },
+          'ai',
+        ),
+      ]
+    : [];
+  return [
+    ...names,
+    ...(mode === 'append' ? existing : []),
+    ...draft.rules.map((r) => makeStep(r, 'ai')),
+  ];
+}
 export function useWorkspace() {
   const [files, setFiles] = useState<FileEntry[]>([]),
     [selected, setSelected] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState(''),
     [type, setType] = useState('all'),
     [onlyChanged, setOnlyChanged] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'problems' | 'unmatched'>('all');
+  const [scheme, setScheme] = useState<SchemeOptions>(defaultScheme);
+  const [referenceDate, setReferenceDate] = useState(localDate);
+  const [evaluated, setEvaluated] = useState<{ signature: string; report: EngineReport } | null>(
+    null,
+  );
+  const [evaluationError, setEvaluationError] = useState('');
+  const [examples, setExamples] = useState<Example[]>([]),
+    [draftExamples, setDraftExamples] = useState<Example[]>([]);
+  const [includeRules, setIncludeRules] = useState(false);
+  const [validationExamples, setValidationExamples] = useState<Example[]>([]);
   const [tab, setTab] = useState<'rules' | 'ai' | 'presets'>('rules'),
     [steps, setSteps] = useState<RuleStep[]>([]),
     [selectedStepId, setSelectedStepId] = useState<string | null>(null);
@@ -60,7 +106,7 @@ export function useWorkspace() {
   const [instruction, setInstruction] = useState(
       '参考列表中的文件名，清理末尾副本，再把空格替换为下划线，保留扩展名。',
     ),
-    [content, setContent] = useState(true);
+    [content, setContent] = useState(false);
   const [aiTask, setAiTask] = useState<'rules' | 'names'>('rules'),
     [contextScope, setContextScope] = useState<'selected' | 'visible' | 'all'>('selected'),
     [aiDraft, setAiDraft] = useState<RuleDraft | null>(null);
@@ -83,6 +129,7 @@ export function useWorkspace() {
   const browserInput = useRef<HTMLInputElement>(null),
     browserFolder = useRef<HTMLInputElement>(null),
     busyRef = useRef(false);
+  const preparedExamples = useRef<Example[]>([]);
   const tell = useCallback((text: string, error = false) => setNotice({ text, error }), []);
   const run = useCallback(
     async (label: string, action: () => Promise<void>) => {
@@ -153,32 +200,127 @@ export function useWorkspace() {
       ) as Record<string, string>,
     [steps],
   );
-  const pipelineErrors = steps
+  const parameterErrors = steps
     .filter((s) => s.enabled)
     .flatMap((s) => {
       const error = ruleError(s.rule);
       return error ? [error] : [];
     });
-  const presetProblem = useMemo(() => {
-    const reusable = steps.filter((s) => s.rule.kind !== 'aiNames');
+  const basePresetProblem = useMemo(() => {
+    const reusable = steps.filter((s) => !containsFileNames(s.rule));
     if (!reusable.length) return '请先添加通用规则；逐文件 AI 建议不能保存为通用方案';
     if (reusable.some((s) => !parseRule(s.rule))) return '存在无效规则参数，完善后才能保存';
     if (reusable.some((s) => s.enabled && ruleError(s.rule))) return '请先完善已启用的规则参数';
     return null;
   }, [steps]);
   const selectedStep = steps.find((s) => s.id === selectedStepId) ?? steps.at(-1) ?? null;
-  const changes = useMemo<Change[]>(
-    () => applyPipeline(chosen, steps).map((c) => ({ ...c, name: edits[c.id] ?? c.name })),
-    [chosen, steps, edits],
+  const engineOptions = useMemo<EngineOptions>(
+    () => ({
+      ...scheme,
+      referenceDate,
+      timezoneOffset: new Date().getTimezoneOffset(),
+      timezoneOffsets: Object.fromEntries(
+        chosen.map((f) => [f.id, new Date(f.modified / 1_000_000).getTimezoneOffset()]),
+      ),
+      traceId: activeFile,
+    }),
+    [scheme, referenceDate, activeFile, chosen],
   );
-  const signature = useMemo(
-    () => JSON.stringify([changes, operation, destination]),
-    [changes, operation, destination],
+  const inspectRules = useCallback(
+    async (
+      rules: RuleStep[],
+      constraints: Example[],
+      overrides: Record<string, string> = {},
+      draftOptions?: SchemeOptions,
+    ): Promise<EngineReport> => {
+      const report = desktop
+        ? await invoke<EngineReport>('evaluate_pipeline', {
+            ids: chosen.map((f) => f.id),
+            steps: rules,
+            options: { ...engineOptions, ...draftOptions },
+            edits: overrides,
+            examples: constraints,
+          })
+        : evaluateDemo(chosen, rules, overrides, constraints, activeFile);
+      if (report.changes.length) {
+        const items = desktop
+          ? await invoke<PlanItem[]>('preview', {
+              changes: report.changes,
+              operation: destination ? operation : 'rename',
+              destination: destination || null,
+            })
+          : previewBrowser(chosen, report.changes);
+        const errors = new Map(items.filter((i) => i.error).map((i) => [i.id, i.error]));
+        for (const d of report.details) {
+          if (errors.get(d.id)) {
+            d.error = d.error ?? errors.get(d.id)!;
+            d.status = 'error';
+          }
+        }
+        for (const e of report.examples)
+          if (report.details.find((d) => d.id === e.id)?.error) e.passed = false;
+      }
+      return report;
+    },
+    [chosen, engineOptions, activeFile, operation, destination],
+  );
+  const evaluationSignature = useMemo(
+    () =>
+      JSON.stringify([
+        chosen,
+        steps,
+        { ...engineOptions, traceId: undefined },
+        edits,
+        validationExamples,
+      ]),
+    [chosen, steps, engineOptions, edits, validationExamples],
   );
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
-      if (!changes.length || (operation !== 'rename' && !destination)) {
+      inspectRules(
+        steps,
+        validationExamples.filter((e) => selected.has(e.id)),
+        edits,
+      )
+        .then((report) => {
+          if (!cancelled) {
+            setEvaluated({ signature: evaluationSignature, report });
+            setEvaluationError('');
+          }
+        })
+        .catch((e) => {
+          if (!cancelled) {
+            setEvaluated(null);
+            setEvaluationError(String(e));
+          }
+        });
+    }, 120);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [evaluationSignature, inspectRules, steps, edits, validationExamples, selected]);
+  const engineReport = evaluated?.signature === evaluationSignature ? evaluated.report : null;
+  const details = useMemo(
+    () => new Map(engineReport?.details.map((d) => [d.id, d]) ?? []),
+    [engineReport],
+  );
+  const pipelineErrors = [
+    ...parameterErrors,
+    ...(evaluationError ? [evaluationError] : []),
+    ...(engineReport?.examples.some((e) => !e.passed) ? ['方案未满足目标示例'] : []),
+  ];
+  const presetProblem = basePresetProblem || evaluationError || null;
+  const changes = engineReport?.changes ?? [];
+  const signature = useMemo(
+    () => JSON.stringify([evaluationSignature, changes, operation, destination]),
+    [evaluationSignature, changes, operation, destination],
+  );
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (!engineReport || !changes.length || (operation !== 'rename' && !destination)) {
         setPreview({ signature, items: [] });
         return;
       }
@@ -187,7 +329,11 @@ export function useWorkspace() {
         : Promise.resolve(previewBrowser(chosen, changes));
       promise
         .then((items) => {
-          if (!cancelled) setPreview({ signature, items });
+          if (!cancelled)
+            setPreview({
+              signature,
+              items: items.map((i) => ({ ...i, error: details.get(i.id)?.error ?? i.error })),
+            });
         })
         .catch((e) => {
           if (!cancelled) {
@@ -200,9 +346,9 @@ export function useWorkspace() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [changes, chosen, operation, destination, signature, tell]);
+  }, [engineReport, details, chosen, operation, destination, signature, tell]);
   const plan = preview?.signature === signature ? preview.items : [],
-    planReady = preview?.signature === signature;
+    planReady = !!engineReport && preview?.signature === signature;
   const byId = useMemo(() => new Map(plan.map((p) => [p.id, p])), [plan]);
   const changeMap = useMemo(() => new Map(changes.map((c) => [c.id, c.name])), [changes]);
   const changed = plan.filter((p) => p.changed).length,
@@ -218,13 +364,21 @@ export function useWorkspace() {
     (operation === 'rename' || !!destination);
   const visible = useMemo(
     () =>
-      files.filter(
+      orderFiles(
+        files,
+        scheme,
+        engineReport?.details.map((d) => d.id),
+      ).filter(
         (f) =>
           (type === 'all' || f.extension === type) &&
           f.name.toLowerCase().includes(query.toLowerCase()) &&
+          (statusFilter === 'all' ||
+            (statusFilter === 'problems'
+              ? !!details.get(f.id)?.error
+              : details.get(f.id)?.unmatched || details.get(f.id)?.status === 'unmatched')) &&
           (!onlyChanged || (changeMap.has(f.id) && changeMap.get(f.id) !== f.name)),
       ),
-    [files, type, query, onlyChanged, changeMap],
+    [files, type, query, onlyChanged, changeMap, statusFilter, details, scheme, engineReport],
   );
   const aiEntries =
     aiTask === 'names'
@@ -289,6 +443,7 @@ export function useWorkspace() {
   function resetRules() {
     changeSteps(() => []);
     setSelectedStepId(null);
+    setValidationExamples([]);
   }
   function loadPreset(name: string) {
     const preset = presets.find((p) => p.name === name);
@@ -299,6 +454,8 @@ export function useWorkspace() {
     }
     const added = preset.steps.map((s) => ({ ...makeStep(s.rule), enabled: s.enabled }));
     changeSteps((old) => [...old, ...added]);
+    setScheme(preset.options ?? legacyScheme);
+    setValidationExamples([]);
     if (added.length) setSelectedStepId(added[0].id);
     setTab('rules');
     tell(`已追加方案：${preset.name}`);
@@ -310,14 +467,19 @@ export function useWorkspace() {
       tell(presetProblem, true);
       return;
     }
-    const reusable = steps.filter((s) => s.rule.kind !== 'aiNames');
+    const reusable = steps.filter((s) => !containsFileNames(s.rule));
     if (!reusable.length) {
       tell('请先添加通用规则；逐文件 AI 建议不能保存为通用方案', true);
       return;
     }
     const next = [
       ...presets.filter((p) => p.name !== name),
-      { name, steps: structuredClone(reusable) },
+      {
+        name,
+        version: 3 as const,
+        steps: structuredClone(reusable),
+        options: structuredClone(scheme),
+      },
     ];
     try {
       localStorage.setItem('uu-presets', JSON.stringify(next));
@@ -333,18 +495,25 @@ export function useWorkspace() {
       tell('本地存储不可用，方案未保存', true);
     }
   }
-  function adoptAiDraft(mode: 'append' | 'replace') {
+  async function adoptAiDraft(mode: 'append' | 'replace') {
     if (!aiDraft) return;
-    const newSteps = aiDraft.rules.map((rule) => makeStep(rule, 'ai'));
-    if ((mode === 'append' ? steps.length : 0) + newSteps.length > 64) {
+    const newSteps = draftSteps(aiDraft, steps, mode);
+    if (newSteps.length > 64) {
       tell('规则总数超过 64 条', true);
       return;
     }
-    changeSteps((old) => (mode === 'append' ? [...old, ...newSteps] : newSteps));
-    setSelectedStepId(newSteps[0]?.id ?? null);
-    setAiDraft(null);
-    setTab('rules');
-    tell('AI 规则已加入预览；确认效果后再执行');
+    await run('验证方案…', async () => {
+      const report = await inspectRules(newSteps, draftExamples, {}, aiDraft.options);
+      if (report.details.some((d) => d.error) || report.examples.some((e) => !e.passed))
+        throw new Error('方案仍有问题或未满足目标示例，请调整要求后重新生成');
+      changeSteps(() => newSteps);
+      if (aiDraft.options) setScheme(aiDraft.options);
+      setValidationExamples(draftExamples);
+      setSelectedStepId(newSteps.at(-1)?.id ?? null);
+      setAiDraft(null);
+      setTab('rules');
+      tell('AI 方案已加入预览；确认效果后再执行');
+    });
   }
   const toggle = (id: string) =>
     setSelected((old) => {
@@ -409,7 +578,7 @@ export function useWorkspace() {
     setFiles(sample);
     setSelected(new Set(sample.map((f) => f.id)));
     setEdits({});
-    const step = catalogStep('clean');
+    const step = makeStep({ kind: 'cleanCopies', params: {} });
     setSteps([step]);
     setSelectedStepId(step.id);
     tell('示例数据 · 不修改真实文件');
@@ -455,22 +624,31 @@ export function useWorkspace() {
   }
   async function prepareAi() {
     if (!desktop || !aiEntries.length) return;
-    await run('检查权限并准备文件名…', async () =>
-      setPrepared(
-        await invoke('prepare_ai', {
-          ids: aiEntries.map((f) => f.id),
-          options: {
-            task: aiTask,
-            reference_date: aiTask === 'rules' ? localDate() : undefined,
-            route,
-            model: route === 'local' ? model : cloudModel,
-            endpoint,
-            instruction,
-            content: aiTask === 'names' && content,
-          },
-        }),
-      ),
-    );
+    await run('检查权限并准备文件名…', async () => {
+      const frozenExamples = aiTask === 'rules' ? structuredClone(examples) : [];
+      const date = localDate();
+      setReferenceDate(date);
+      const result = await invoke<Prepared>('prepare_ai', {
+        ids: aiEntries.map((f) => f.id),
+        options: {
+          task: aiTask,
+          reference_date: aiTask === 'rules' ? date : undefined,
+          route,
+          model: route === 'local' ? model : cloudModel,
+          endpoint,
+          instruction,
+          content: aiTask === 'names' && content,
+          current_rules:
+            aiTask === 'rules' && includeRules
+              ? steps.filter((s) => s.enabled && !containsFileNames(s.rule)).map((s) => s.rule)
+              : [],
+          current_scheme: scheme,
+          examples: frozenExamples,
+        },
+      });
+      preparedExamples.current = frozenExamples;
+      setPrepared(result);
+    });
   }
   async function generate() {
     if (!prepared) return;
@@ -482,7 +660,13 @@ export function useWorkspace() {
           token: current.token,
           cloudConsent: current.route === 'cloud',
         });
-        setAiDraft(parseRuleDraft(result));
+        setAiDraft(
+          parseRuleDraft(
+            result,
+            files.filter((f) => current.reference_ids?.includes(f.id)),
+          ),
+        );
+        setDraftExamples(preparedExamples.current);
       } else {
         const results = await invoke<Suggestion[]>('generate_ai', {
           token: current.token,
@@ -496,20 +680,17 @@ export function useWorkspace() {
           tell('规则已满，请移除部分规则后重新生成', true);
           return;
         }
-        const step = makeStep(
-          {
-            kind: 'aiNames',
-            params: {
-              names: Object.fromEntries(results.map((s) => [s.id, s.name])),
-              reasons: Object.fromEntries(results.map((s) => [s.id, s.reason])),
+        setAiDraft(
+          parseRuleDraft(
+            {
+              rules: [],
+              suggestions: results,
+              explanation: '逐文件基础名称先运行，之后叠加普通规则。',
             },
-          },
-          'ai',
+            files.filter((f) => current.reference_ids?.includes(f.id)),
+          ),
         );
-        changeSteps((old) => [step, ...old]);
-        setSelectedStepId(step.id);
-        setTab('rules');
-        tell(`${results.length} 项 AI 基础名称已加入预览，原规则继续叠加`);
+        setDraftExamples([]);
       }
     });
   }
@@ -544,6 +725,7 @@ export function useWorkspace() {
       setFiles(await invoke('list_files'));
       setSelected(new Set());
       setEdits({});
+      setValidationExamples([]);
       if (!result.error) setSteps((old) => old.filter((s) => s.rule.kind !== 'aiNames'));
       tell(
         result.error
@@ -600,6 +782,21 @@ export function useWorkspace() {
     type,
     setType,
     onlyChanged,
+    statusFilter,
+    setStatusFilter,
+    scheme,
+    setScheme,
+    referenceDate,
+    setReferenceDate,
+    engineReport,
+    details,
+    inspectRules,
+    evaluationError,
+    examples,
+    setExamples,
+    draftExamples,
+    includeRules,
+    setIncludeRules,
     setOnlyChanged,
     tab,
     setTab,

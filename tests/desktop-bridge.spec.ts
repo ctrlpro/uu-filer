@@ -12,6 +12,7 @@ test('content AI preserves consent and adds a base-name step without clearing or
   await page.getByRole('combobox', { name: '所选文件隐私策略' }).selectOption('cloud');
   await page.getByRole('tab', { name: 'AI 助手', exact: true }).click();
   await page.getByRole('combobox', { name: 'AI 任务', exact: true }).selectOption('names');
+  await page.getByRole('checkbox', { name: '理解文件内容', exact: true }).check();
   await page.getByRole('combobox', { name: '处理方式', exact: true }).selectOption('cloud');
   await page.getByRole('button', { name: '查看内容并生成', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '确认云端发送' })).toBeVisible();
@@ -22,6 +23,12 @@ test('content AI preserves consent and adds a base-name step without clearing or
   expect(await ipcCalls(page, 'generate_ai')).toHaveLength(0);
   await page.getByRole('button', { name: '查看内容并生成', exact: true }).click();
   await page.getByRole('button', { name: '同意发送以上内容', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'AI 规则草案' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'report 01.txt 的新名称' })).toHaveValue(
+    '项目_report 01.txt',
+  );
+  expect(await ipcCalls(page, 'execute')).toHaveLength(0);
+  await page.getByRole('button', { name: '加入应用区并预览', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'report 01.txt 的新名称' })).toHaveValue(
     '项目_整理 report.txt',
   );

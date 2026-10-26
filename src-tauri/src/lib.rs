@@ -1,6 +1,7 @@
 pub mod ai;
 #[cfg(feature = "desktop")]
 pub mod desktop;
+pub mod engine;
 pub mod files;
 pub mod rules;
 pub mod store;

@@ -7,18 +7,89 @@ export function AiAssistant({ w, openSettings }: { w: Workspace; openSettings: (
     <div role="tabpanel" id="pane-ai" aria-labelledby="tab-ai">
       <label className="field">
         AI 任务
-        <select value={w.aiTask} onChange={(e) => w.setAiTask(e.target.value as 'rules' | 'names')}>
+        <select
+          aria-label="AI 任务"
+          value={w.aiTask}
+          onChange={(e) => w.setAiTask(e.target.value as 'rules' | 'names')}
+        >
           <option value="rules">自然语言 → 规则草案</option>
-          <option value="names">文件内容 → 基础名称</option>
+          <option value="names">逐文件命名（可选正文）</option>
         </select>
       </label>
       <label className="field">
         处理方式
-        <select value={w.route} onChange={(e) => w.setRoute(e.target.value as 'local' | 'cloud')}>
+        <select
+          aria-label="处理方式"
+          value={w.route}
+          onChange={(e) => w.setRoute(e.target.value as 'local' | 'cloud')}
+        >
           <option value="local">本地 Ollama</option>
           <option value="cloud">云端 API</option>
         </select>
       </label>
+      {w.aiTask === 'rules' && (
+        <details className="ai-context">
+          <summary>目标示例与当前方案</summary>
+          <label className="inline-check">
+            <input
+              type="checkbox"
+              checked={w.includeRules}
+              onChange={(e) => w.setIncludeRules(e.target.checked)}
+            />
+            参考当前已启用规则
+          </label>
+          <p className="form-note">
+            可继续要求调整原方案；替换整组仍需在草案中确认。示例与规则参数会列入发送预览。
+          </p>
+          {w.examples.map((example, i) => (
+            <div className="ai-example" key={i}>
+              <select
+                aria-label={`示例${i + 1}文件`}
+                value={example.id}
+                onChange={(e) =>
+                  w.setExamples(
+                    w.examples.map((v, n) => (n === i ? { ...v, id: e.target.value } : v)),
+                  )
+                }
+              >
+                {w.chosen.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                aria-label={`示例${i + 1}期望名称`}
+                placeholder="期望的新文件名（含扩展名）"
+                value={example.expected}
+                onChange={(e) =>
+                  w.setExamples(
+                    w.examples.map((v, n) => (n === i ? { ...v, expected: e.target.value } : v)),
+                  )
+                }
+              />
+              <button
+                aria-label={`删除示例${i + 1}`}
+                onClick={() => w.setExamples(w.examples.filter((_, n) => n !== i))}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <button
+            disabled={
+              w.examples.length >= 8 ||
+              !w.chosen.some((f) => !w.examples.some((e) => e.id === f.id))
+            }
+            onClick={() => {
+              const f = w.chosen.find((f) => !w.examples.some((e) => e.id === f.id));
+              if (f) w.setExamples([...w.examples, { id: f.id, expected: '' }]);
+            }}
+          >
+            添加目标示例
+          </button>
+        </details>
+      )}
       {w.route === 'local' ? (
         <label className="field">
           本地模型
@@ -66,6 +137,7 @@ export function AiAssistant({ w, openSettings }: { w: Workspace; openSettings: (
       <label className="field">
         命名要求
         <textarea
+          aria-label="命名要求"
           rows={4}
           maxLength={8000}
           value={w.instruction}
@@ -84,6 +156,14 @@ export function AiAssistant({ w, openSettings }: { w: Workspace; openSettings: (
               [
                 '统一格式',
                 '参考列表中的文件名，将空格替换成下划线，英文字母统一小写，保留扩展名。',
+              ],
+              [
+                '提取重组',
+                '参考实际文件名，提取客户、日期和合同号，日期统一 YYYY-MM-DD，按“日期_客户_合同号”重组。无法识别的标记出来，保留扩展名。',
+              ],
+              [
+                '语义整理',
+                '仅根据文件名，将名称整理为简洁清晰的中文；无法表达为通用规则的使用逐文件建议，不猜测内容。',
               ],
             ]
           : [
@@ -127,14 +207,19 @@ export function AiAssistant({ w, openSettings }: { w: Workspace; openSettings: (
         </span>
       </div>
       {w.eligibleAiCount > limit && (
-        <p className="validation-error">本任务最多参考 {limit} 个文件，请缩小范围。</p>
+        <p className={w.aiTask === 'rules' ? 'form-note' : 'validation-error'}>
+          {w.aiTask === 'rules'
+            ? `将按命名结构选取最多 ${limit} 个代表文件名；生成后在全部 ${w.chosen.length} 个操作对象上本地试算。`
+            : `本任务最多参考 ${limit} 个文件，请缩小范围。`}
+        </p>
       )}
       <button
         className="primary ai-action"
         disabled={
           !w.desktop ||
           !w.eligibleAiCount ||
-          w.eligibleAiCount > limit ||
+          (w.aiTask === 'names' && w.eligibleAiCount > limit) ||
+          (w.aiTask === 'rules' && w.examples.some((e) => !e.expected.trim())) ||
           (w.route === 'local' && !w.model)
         }
         onClick={() => void w.prepareAi()}

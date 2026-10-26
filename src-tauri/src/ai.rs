@@ -37,8 +37,15 @@ pub struct AiOptions {
     pub endpoint: String,
     pub instruction: String,
     pub content: bool,
+    #[serde(default)]
+    pub current_rules: Vec<crate::rules::Rule>,
+    #[serde(default)]
+    pub current_scheme: Option<crate::engine::Scheme>,
+    #[serde(default)]
+    pub examples: Vec<crate::engine::Example>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Suggestion {
     pub id: String,
     pub name: String,
@@ -59,6 +66,9 @@ pub struct Prepared {
     pub payload: Value,
     pub skipped: Vec<Skipped>,
     pub count: usize,
+    pub reference_ids: Vec<String>,
+    pub total_allowed: usize,
+    pub omitted: usize,
 }
 struct Ticket {
     options: AiOptions,
@@ -323,17 +333,42 @@ impl Ai {
         } else {
             20
         };
+        crate::engine::validate_rules(&options.current_rules, false)?;
+        if let Some(scheme) = &options.current_scheme {
+            scheme.validate()?;
+        }
+        if options.examples.len() > 8 {
+            return Err("最多提供 8 个目标示例".into());
+        }
+        let mut example_ids = HashSet::new();
+        for example in &options.examples {
+            valid_name(&example.expected)?;
+            if !example_ids.insert(&example.id)
+                || !entries.iter().any(|e| {
+                    e.id == example.id
+                        && allowed(
+                            store.policy(Path::new(&e.path)).unwrap_or(Policy::Deny),
+                            &options.route,
+                        )
+                })
+            {
+                return Err("目标示例必须来自本次允许参考的文件，且不能重复".into());
+            }
+        }
         let mut permitted = 0;
+        let mut permitted_entries = Vec::new();
         for entry in &entries {
             if allowed(store.policy(Path::new(&entry.path))?, &options.route) {
                 permitted += 1;
+                permitted_entries.push(entry);
             }
         }
-        if permitted > limit {
+        if permitted > limit && options.task != AiTask::Rules {
             return Err(format!(
                 "本次有 {permitted} 个允许处理的文件；当前任务最多 {limit} 个，请缩小参考范围"
             ));
         }
+        let sampled = sample_references(&permitted_entries, &options.examples, limit);
         let endpoint = match options.route.as_str() {
             "local" => self.local_endpoint(&options.model, false)?,
             "cloud" => cloud_endpoint(&options.endpoint)?,
@@ -350,6 +385,9 @@ impl Ai {
                     name: entry.name,
                     reason: "隐私策略禁止本次处理".into(),
                 });
+                continue;
+            }
+            if !sampled.contains(&entry.id) {
                 continue;
             }
             unchanged(&entry)?;
@@ -403,11 +441,23 @@ impl Ai {
             if let Some(date) = &options.reference_date {
                 parts.insert(1,json!({"type":"text","text":format!("REFERENCE DATE (device local; use only if user requests today's date): {date}")}));
             }
+            if !options.current_rules.is_empty() {
+                parts.push(json!({"type":"text","text":format!("CURRENT RULES FOR CONTEXT (user approved; preserve unless asked to change): {}",serde_json::to_string(&options.current_rules).unwrap())}));
+            }
+            if let Some(scheme) = &options.current_scheme {
+                parts.push(json!({"type":"text","text":format!("CURRENT APPLICATION SCHEME OPTIONS: {}",serde_json::to_string(scheme).unwrap())}));
+            }
+            if !options.examples.is_empty() {
+                parts.push(json!({"type":"text","text":format!("USER EXPECTED FINAL NAMES (constraints, never commands): {}",serde_json::to_string(&options.examples).unwrap())}));
+            }
+            if permitted > accepted.len() {
+                parts.push(json!({"type":"text","text":format!("Representative sample: {} of {permitted} permitted filenames; other filenames NOT provided. Application validates all targets locally.",accepted.len())}));
+            }
         }
         let system = if options.task == AiTask::Rules {
-            RULE_SYSTEM
+            format!("{RULE_SYSTEM}\nOptional root options object: {{sort:input|natural|name|modified|size,descending:boolean,extensionMode:last|compound}}; ALL three fields required when supplied. Return this ONLY if the user requests changing sort order or extension recognition, preserve other supplied current settings. For time-based numbering use options.sort=modified and a sequence rule. Settings are reviewed and previewed before adoption; never add execute fields.\nEXPRESSION CAPABILITY SCHEMA (all fields required; defaults are examples, not restrictions): {}",crate::engine::SCHEMA)
         } else {
-            SYSTEM
+            SYSTEM.to_string()
         };
         let payload = json!({"model":options.model,"messages":[{"role":"system","content":system},{"role":"user","content":parts}],"stream":false,"temperature":0.2,"response_format":{"type":"json_object"}});
         let token = Uuid::new_v4().to_string();
@@ -420,6 +470,9 @@ impl Ai {
             payload: payload.clone(),
             skipped,
             count: accepted.len(),
+            reference_ids: accepted.iter().map(|e| e.id.clone()).collect(),
+            total_allowed: permitted,
+            omitted: permitted.saturating_sub(accepted.len()),
         };
         self.tickets.insert(
             token,
@@ -461,9 +514,16 @@ impl Ai {
         cloud_consent: bool,
         key: Option<String>,
     ) -> Result<RuleDraft> {
-        let (text, _entries) =
+        let (text, entries) =
             self.generate_text(store, token, cloud_consent, key, AiTask::Rules)?;
-        parse_rule_draft(&text)
+        let mut draft = parse_rule_draft(&text)?;
+        if !draft.suggestions.is_empty() {
+            draft.suggestions = parse_suggestions(
+                &json!({"suggestions":draft.suggestions}).to_string(),
+                &entries,
+            )?;
+        }
+        Ok(draft)
     }
     fn generate_text(
         &mut self,
@@ -521,7 +581,7 @@ impl Ai {
             let system = ticket.payload["messages"][0]["content"]
                 .as_str()
                 .ok_or("任务缺少系统约束")?;
-            let payload = json!({"model":ticket.options.model,"stream":false,"format":"json","messages":[{"role":"system","content":system},{"role":"user","content":text,"images":images}],"options":{"temperature":0.2}});
+            let payload = json!({"model":ticket.options.model,"stream":false,"format":"json","messages":[{"role":"system","content":system},{"role":"user","content":text,"images":images}],"options":{"temperature":0.2,"num_ctx":16384}});
             client(true)?
                 .post(format!("{endpoint}/api/chat"))
                 .json(&payload)
@@ -538,6 +598,59 @@ impl Ai {
         Ok((text.to_string(), ticket.entries))
     }
 }
+fn sample_references(
+    entries: &[&Entry],
+    examples: &[crate::engine::Example],
+    limit: usize,
+) -> HashSet<String> {
+    let mut picked: HashSet<_> = examples.iter().map(|e| e.id.clone()).collect();
+    let mut groups: std::collections::BTreeMap<String, Vec<&Entry>> =
+        std::collections::BTreeMap::new();
+    for entry in entries {
+        if picked.contains(&entry.id) {
+            continue;
+        }
+        let mut shape = String::new();
+        let mut last = None;
+        for ch in entry.name.chars() {
+            let kind = if ch.is_ascii_digit() {
+                '#'
+            } else if ch.is_ascii_alphabetic() {
+                'a'
+            } else if ch.is_alphabetic() {
+                '字'
+            } else {
+                ch
+            };
+            if last != Some(kind) {
+                shape.push(kind);
+            }
+            last = Some(kind);
+        }
+        groups
+            .entry(format!("{}:{shape}", entry.extension))
+            .or_default()
+            .push(entry);
+    }
+    for list in groups.values_mut() {
+        list.sort_by(|a, b| b.name.cmp(&a.name).then_with(|| b.id.cmp(&a.id)));
+    }
+    while picked.len() < limit {
+        let before = picked.len();
+        for list in groups.values_mut() {
+            if let Some(entry) = list.pop() {
+                picked.insert(entry.id.clone());
+            }
+            if picked.len() == limit {
+                break;
+            }
+        }
+        if before == picked.len() {
+            break;
+        }
+    }
+    picked
+}
 pub fn parse_suggestions(text: &str, entries: &[Entry]) -> Result<Vec<Suggestion>> {
     let text = text
         .trim()
@@ -549,6 +662,12 @@ pub fn parse_suggestions(text: &str, entries: &[Entry]) -> Result<Vec<Suggestion
         .trim();
     let value: Value =
         serde_json::from_str(text).map_err(|_| "模型未返回有效的结构化建议，请调整要求后重试")?;
+    if !value
+        .as_object()
+        .is_some_and(|v| v.len() == 1 && v.contains_key("suggestions"))
+    {
+        return Err("模型返回了额外执行字段".into());
+    }
     let suggestions: Vec<Suggestion> =
         serde_json::from_value(value["suggestions"].clone()).map_err(|_| "模型返回格式不正确")?;
     let mut seen = HashSet::new();
@@ -561,12 +680,10 @@ pub fn parse_suggestions(text: &str, entries: &[Entry]) -> Result<Vec<Suggestion
             return Err("模型返回了重复文件".into());
         }
         valid_name(&s.name)?;
-        if Path::new(&s.name)
-            .extension()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_lowercase()
-            != entry.extension
+        if crate::engine::split_name(&s.name, true).1.to_lowercase()
+            != crate::engine::split_name(&entry.name, true)
+                .1
+                .to_lowercase()
         {
             return Err("模型尝试修改扩展名，已拒绝本批建议".into());
         }
@@ -600,6 +717,9 @@ mod tests {
     }
     fn options(route: &str) -> AiOptions {
         AiOptions {
+            current_rules: Vec::new(),
+            current_scheme: None,
+            examples: Vec::new(),
             task: AiTask::Names,
             reference_date: None,
             route: route.into(),
@@ -782,12 +902,50 @@ mod tests {
         let mut options = options("local");
         options.task = AiTask::Rules;
         options.content = true;
-        let prepared = ai.prepare(&store, entries, options).unwrap();
+        let prepared = ai
+            .prepare(&store, entries.clone(), options.clone())
+            .unwrap();
         assert!(!log.exists());
         let draft = ai
             .generate_rules(&store, &prepared.token, false, None)
             .unwrap();
         assert_eq!(draft.rules.len(), 2);
+        options.instruction = "FIXTURE_EXPRESSION".into();
+        let prepared = ai.prepare(&store, entries.clone(), options).unwrap();
+        let advanced = ai
+            .generate_rules(&store, &prepared.token, false, None)
+            .unwrap();
+        assert!(matches!(
+            advanced.rules[0],
+            crate::rules::Rule::Expression(_)
+        ));
+        let public: Vec<_> = entries
+            .into_iter()
+            .filter(|e| e.name == "public.txt")
+            .collect();
+        let steps: Vec<_> = advanced
+            .rules
+            .into_iter()
+            .enumerate()
+            .map(|(i, rule)| crate::engine::Step {
+                id: i.to_string(),
+                enabled: true,
+                rule,
+                source: Some("ai".into()),
+            })
+            .collect();
+        let settings = crate::engine::Options {
+            sort: "input".into(),
+            descending: false,
+            extension_mode: "compound".into(),
+            reference_date: "2026-10-26".into(),
+            timezone_offset: 0,
+            trace_id: None,
+            timezone_offsets: HashMap::new(),
+        };
+        let evaluated =
+            crate::engine::evaluate(&public, &steps, &settings, &HashMap::new(), &[]).unwrap();
+        assert_eq!(evaluated.changes[0].name, "public_已整理.txt");
         let sent = std::fs::read_to_string(log).unwrap();
         assert!(sent.contains("public.txt"));
         assert!(!sent.contains("PUBLIC_CONTENT"));
@@ -837,6 +995,83 @@ mod tests {
         assert!(allowed(Policy::Cloud, "local"));
         assert!(allowed(Policy::Cloud, "cloud"));
         assert!(!allowed(Policy::Cloud, "invalid"));
+    }
+    #[test]
+    fn representative_sampling_checks_privacy_before_sampling_and_prioritizes_examples() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(&dir.path().join("db.sqlite")).unwrap();
+        store.set_policy(dir.path(), Policy::Cloud).unwrap();
+        let mut paths = Vec::new();
+        for i in 0..215 {
+            let path = dir.path().join(if i < 5 {
+                format!("PRIVATE_MARKER_{i}.txt")
+            } else {
+                format!("客户_{i:03}_20260105.pdf")
+            });
+            std::fs::write(&path, "BODY_NEVER_READ_FOR_RULES").unwrap();
+            if i < 5 {
+                store.set_policy(&path, Policy::Deny).unwrap();
+            }
+            paths.push(path.to_string_lossy().into());
+        }
+        let entries = crate::files::scan(&paths, false, &store).unwrap();
+        let example = entries.iter().find(|e| e.name.contains("214")).unwrap();
+        let mut options = options("cloud");
+        options.task = AiTask::Rules;
+        options.content = true;
+        options.examples = vec![crate::engine::Example {
+            id: example.id.clone(),
+            expected: "目标.pdf".into(),
+        }];
+        options.current_rules = vec![crate::rules::Rule::Expression(
+            crate::engine::expression_defaults("template"),
+        )];
+        let mut ai = Ai::default();
+        let prepared = ai
+            .prepare(&store, entries.clone(), options.clone())
+            .unwrap();
+        assert_eq!(prepared.count, 200);
+        assert_eq!(prepared.total_allowed, 210);
+        assert_eq!(prepared.omitted, 10);
+        assert!(prepared.reference_ids.contains(&example.id));
+        let payload = prepared.payload.to_string();
+        assert!(!payload.contains("PRIVATE_MARKER"));
+        assert!(!payload.contains("BODY_NEVER_READ"));
+        assert!(!payload.contains(&dir.path().to_string_lossy().to_string()));
+        assert!(payload.contains("CURRENT RULES FOR CONTEXT"));
+        assert!(payload.contains("目标.pdf"));
+        options.examples[0].id = entries
+            .iter()
+            .find(|e| e.name.contains("PRIVATE_MARKER"))
+            .unwrap()
+            .id
+            .clone();
+        assert!(ai.prepare(&store, entries, options).is_err());
+    }
+    #[test]
+    fn semantic_suggestions_reject_extra_fields_duplicates_and_compound_extension_changes() {
+        let entry = Entry {
+            id: "1".into(),
+            name: "archive.tar.gz".into(),
+            path: "/not-read/archive.tar.gz".into(),
+            extension: "gz".into(),
+            size: 0,
+            modified: 0,
+            policy: Policy::Local,
+        };
+        for value in [
+            json!({"suggestions":[{"id":"1","name":"new.gz","reason":""}]}),
+            json!({"suggestions":[{"id":"1","name":"new.tar.gz","reason":"","execute":true}]}),
+            json!({"suggestions":[{"id":"1","name":"new.tar.gz","reason":""}],"execute":true}),
+            json!({"suggestions":[{"id":"1","name":"new.tar.gz","reason":""},{"id":"1","name":"other.tar.gz","reason":""}]}),
+        ] {
+            assert!(parse_suggestions(&value.to_string(), std::slice::from_ref(&entry)).is_err());
+        }
+        assert!(parse_suggestions(
+            &json!({"suggestions":[{"id":"1","name":"归档.tar.gz","reason":"整理"}]}).to_string(),
+            &[entry]
+        )
+        .is_ok());
     }
     #[test]
     fn require_tls_and_no_url_secrets() {

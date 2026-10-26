@@ -2684,3 +2684,222 @@ kbd {
     padding-top: 12px;
   }
 }
+.expression-fields h4,
+.mapping-editor h4 {
+  margin: 10px 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.expression-fields .field small,
+.mapping-editor small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.expression-fields .inline-check {
+  margin: 7px 0;
+}
+.expression-fields input[type='text'] {
+  font-family: inherit;
+}
+.condition-editor,
+.condition-child,
+.nested-rule {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  margin-bottom: 6px;
+  min-width: 0;
+}
+.condition-editor > select,
+.nested-rules > select {
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 6px;
+}
+.condition-child {
+  padding: 6px;
+  background: var(--surface2);
+}
+.condition-child .condition-editor {
+  border: 0;
+  padding: 0;
+}
+.nested-rule summary,
+.scheme-options summary,
+.ai-context summary,
+.draft-suggestions summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--secondary);
+  padding: 5px 0;
+}
+.nested-rule[open] > summary {
+  margin-bottom: 8px;
+}
+.nested-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+}
+.nested-actions button {
+  font-size: 10px;
+  min-height: 24px;
+  padding: 3px 7px;
+}
+.mapping-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) 23px;
+  gap: 4px;
+  margin-bottom: 5px;
+  align-items: center;
+}
+.mapping-row input {
+  width: 100%;
+  min-width: 0;
+  font-size: 11px;
+}
+.mapping-row button {
+  padding: 0;
+  min-height: 25px;
+}
+.mapping-editor small {
+  display: block;
+  margin: 5px 0;
+}
+.capture-fields {
+  margin: 8px 0 0;
+  font-size: 10px;
+}
+.capture-fields > div {
+  display: grid;
+  grid-template-columns: minmax(35px, auto) minmax(0, 1fr);
+  gap: 10px;
+  padding: 3px 0;
+}
+.capture-fields dt {
+  color: var(--muted);
+}
+.capture-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.scheme-options {
+  border-top: 1px solid var(--line);
+  margin-top: 8px;
+  padding-top: 3px;
+}
+.scheme-options .field {
+  margin-top: 5px;
+}
+.scheme-options .section-row {
+  margin: 7px 0 0;
+  font-size: 10px;
+}
+.scheme-options .row-fields {
+  align-items: end;
+}
+.scheme-options .row-fields > button {
+  flex: 0;
+  margin-bottom: 10px;
+}
+.ai-context {
+  margin-bottom: 12px;
+}
+.ai-example {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 25px;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.ai-example > select {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+  font-size: 11px;
+}
+.ai-example > input {
+  width: 100%;
+  min-width: 0;
+  font-size: 11px;
+}
+.ai-example > button {
+  padding: 0;
+}
+.ai-draft-list pre {
+  font-size: 10px;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ai-draft-list summary {
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--muted);
+}
+.draft-suggestions {
+  margin: 10px 0;
+}
+.draft-suggestions > div {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.draft-suggestions p {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+.draft-preview {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+.draft-preview .section-row {
+  flex-wrap: wrap;
+}
+.draft-preview .section-row span {
+  font-size: 10px;
+  color: var(--secondary);
+}
+.draft-preview > select {
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+.draft-preview-list {
+  max-height: 250px;
+  overflow: auto;
+}
+.draft-preview-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 4px 12px;
+  padding: 6px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.draft-preview-list > div > span {
+  color: var(--secondary);
+}
+.draft-preview-list strong {
+  color: var(--accent-text);
+  font-weight: 500;
+}
+.draft-preview-list small {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.selection-tools {
+  gap: 8px;
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 37px;
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
+}

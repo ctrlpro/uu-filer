@@ -13,7 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { Workspace } from '../useWorkspace';
-import { describeRule, ruleCatalog, ruleError, ruleTitle } from '../pipeline';
+import { describeRule, ruleCatalog, ruleError, ruleTitle, localDate } from '../pipeline';
 import { RuleEditor } from './RuleEditor';
 import { AiAssistant } from './AiAssistant';
 export function Inspector({
@@ -163,6 +163,62 @@ export function Inspector({
               保存
             </button>
           </div>
+          <details className="scheme-options">
+            <summary>
+              方案选项 ·{' '}
+              {w.scheme.sort === 'input'
+                ? '导入顺序'
+                : w.scheme.sort === 'natural'
+                  ? '自然排序'
+                  : '自定义排序'}{' '}
+              · {w.scheme.extensionMode === 'compound' ? '复合扩展名' : '末段扩展名'}
+            </summary>
+            <div className="row-fields">
+              <label className="field">
+                编号与列表排序
+                <select
+                  aria-label="编号与列表排序"
+                  value={w.scheme.sort}
+                  onChange={(e) =>
+                    w.setScheme({ ...w.scheme, sort: e.target.value as typeof w.scheme.sort })
+                  }
+                >
+                  <option value="input">导入顺序</option>
+                  <option value="natural">名称自然排序</option>
+                  <option value="name">名称文字排序</option>
+                  <option value="modified">修改时间排序</option>
+                  <option value="size">文件大小排序</option>
+                </select>
+              </label>
+              <button
+                aria-label="切换排序方向"
+                aria-pressed={w.scheme.descending}
+                onClick={() => w.setScheme({ ...w.scheme, descending: !w.scheme.descending })}
+              >
+                {w.scheme.descending ? '降序' : '升序'}
+              </button>
+            </div>
+            <label className="field">
+              扩展名识别方式
+              <select
+                aria-label="扩展名识别方式"
+                value={w.scheme.extensionMode}
+                onChange={(e) =>
+                  w.setScheme({
+                    ...w.scheme,
+                    extensionMode: e.target.value as typeof w.scheme.extensionMode,
+                  })
+                }
+              >
+                <option value="compound">常见复合扩展名（.tar.gz 等）</option>
+                <option value="last">最后一个点之后（旧方案）</option>
+              </select>
+            </label>
+            <div className="section-row">
+              <span>日期基准 {w.referenceDate}</span>
+              <button onClick={() => w.setReferenceDate(localDate())}>更新为今天</button>
+            </div>
+          </details>
         </fieldset>
       </section>
       <div className="mode-tabs" role="tablist" aria-label="规则工作台">
@@ -224,7 +280,7 @@ export function Inspector({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
-              {['文本处理', '清理与规范', '编号与归档'].map((category) => {
+              {[...new Set(ruleCatalog.map((p) => p.category))].map((category) => {
                 const list = matches.filter((p) => p.category === category);
                 return (
                   !!list.length && (

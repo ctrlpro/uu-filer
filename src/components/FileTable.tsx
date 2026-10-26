@@ -46,7 +46,7 @@ export function FileTable({
       ref.current.scrollTop = 0;
       setViewport((v) => ({ ...v, top: 0 }));
     }
-  }, [w.query, w.type, w.onlyChanged, compact]);
+  }, [w.query, w.type, w.onlyChanged, w.statusFilter, w.scheme, compact]);
   const height = compact ? 30 : 38,
     virtual = w.visible.length > 200;
   const start = virtual
@@ -96,7 +96,7 @@ export function FileTable({
           {visible.map((file, index) => {
             const selected = w.selected.has(file.id),
               p = w.byId.get(file.id),
-              name = w.changeMap.get(file.id) ?? file.name,
+              name = w.edits[file.id] ?? w.changeMap.get(file.id) ?? file.name,
               changed = name !== file.name;
             const Permission =
               file.policy === 'deny' ? Ban : file.policy === 'cloud' ? Cloud : LockKeyhole;
@@ -163,7 +163,9 @@ export function FileTable({
                       <Check size={12} />
                     ) : null}
                     {p?.error
-                      ? '名称冲突'
+                      ? w.details.get(file.id)?.error
+                        ? '需处理'
+                        : '名称冲突'
                       : !selected
                         ? '未选择'
                         : changed
