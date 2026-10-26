@@ -10,12 +10,13 @@ import {
 import type { Suggestion } from './types';
 import { parseScheme, type SchemeOptions } from './scheme';
 
+export type NamePosition = 'prefix' | 'suffix' | 'replace';
 interface Parameters {
   expression: Expression;
   replace: { find: string; replacement: string };
   prefix: { text: string };
   suffix: { text: string };
-  number: { start: number; digits: number; separator: string; position: 'prefix' | 'suffix' };
+  number: { start: number; digits: number; separator: string; position: NamePosition };
   trim: Record<string, never>;
   cleanCopies: Record<string, never>;
   stripSpecial: Record<string, never>;
@@ -23,7 +24,7 @@ interface Parameters {
   extensionLower: Record<string, never>;
   spaces: { separator: string };
   case: { mode: 'lower' | 'upper' };
-  date: { date: string; separator: string; position: 'prefix' | 'suffix' };
+  date: { date: string; separator: string; position: NamePosition };
   aiNames: { names: Record<string, string>; reasons: Record<string, string> };
 }
 export type RuleKind = keyof Parameters;
@@ -148,7 +149,7 @@ export const ruleCatalog: RuleCatalogEntry[] = [
     id: 'number',
     name: '连续编号',
     category: '编号与归档',
-    example: '原名称_001 / 001_原名称',
+    example: '原名称_001 / 001_原名称 / 0001.jpg',
     symbol: '01',
     create: () => ({
       kind: 'number',
@@ -167,7 +168,7 @@ export const ruleCatalog: RuleCatalogEntry[] = [
     id: 'date',
     name: '添加日期',
     category: '编号与归档',
-    example: '指定日期 + 原名称，可选位置',
+    example: '日期前后置，或仅用日期替换名称',
     symbol: '日',
     create: () => ({
       kind: 'date',
@@ -197,15 +198,19 @@ export function describeRule(rule: Rule): string {
     case 'expression': {
       const p = rule.params;
       return String(
-        p.op === 'template'
-          ? p.text
-          : p.op === 'extract'
-            ? p.pattern
-            : p.op === 'guard'
-              ? '条件匹配 → 分支处理'
-              : p.op === 'sequence'
-                ? `${p.start} 起 · 步长 ${p.step} · ${p.group}`
-                : (expressionCatalog.find((d) => d.op === p.op)?.example ?? p.op),
+        p.op === 'setName'
+          ? p.text || '待填写新名称'
+          : p.op === 'template'
+            ? p.text
+            : p.op === 'extract'
+              ? p.pattern
+              : p.op === 'guard'
+                ? '条件匹配 → 分支处理'
+                : p.op === 'sequence'
+                  ? `${p.start} 起 · 步长 ${p.step} · ${p.group === 'parent' ? '按目录' : p.group === 'field' ? '按字段' : '全局'}${p.position === 'replace' ? ' · 仅编号' : ''}`
+                  : p.op === 'dateFormat' && p.mode === 'name'
+                    ? `完整替换 · ${p.output}`
+                    : (expressionCatalog.find((d) => d.op === p.op)?.example ?? p.op),
       );
     }
     case 'prefix':
@@ -219,9 +224,9 @@ export function describeRule(rule: Rule): string {
     case 'spaces':
       return `空格 → ${rule.params.separator || '删除'}`;
     case 'number':
-      return `${rule.params.position === 'prefix' ? '前置' : '后置'} · ${String(rule.params.start).padStart(rule.params.digits, '0')}`;
+      return `${rule.params.position === 'replace' ? '完整替换' : rule.params.position === 'prefix' ? '前置' : '后置'} · ${String(rule.params.start).padStart(rule.params.digits, '0')}`;
     case 'date':
-      return `${rule.params.date} · ${rule.params.position === 'prefix' ? '前置' : '后置'}`;
+      return `${rule.params.date} · ${rule.params.position === 'replace' ? '完整替换' : rule.params.position === 'prefix' ? '前置' : '后置'}`;
     case 'aiNames':
       return `${Object.keys(rule.params.names).length} 项建议 · 仅匹配对应文件`;
     default:
@@ -279,16 +284,20 @@ function applyParts(
     case 'number': {
       const value = String(rule.params.start + index).padStart(rule.params.digits, '0');
       stem =
-        rule.params.position === 'prefix'
-          ? value + rule.params.separator + stem
-          : stem + rule.params.separator + value;
+        rule.params.position === 'replace'
+          ? value
+          : rule.params.position === 'prefix'
+            ? value + rule.params.separator + stem
+            : stem + rule.params.separator + value;
       break;
     }
     case 'date':
       stem =
-        rule.params.position === 'prefix'
-          ? rule.params.date + rule.params.separator + stem
-          : stem + rule.params.separator + rule.params.date;
+        rule.params.position === 'replace'
+          ? rule.params.date
+          : rule.params.position === 'prefix'
+            ? rule.params.date + rule.params.separator + stem
+            : stem + rule.params.separator + rule.params.date;
       break;
     case 'aiNames':
       return Object.prototype.hasOwnProperty.call(rule.params.names, fileId)
@@ -390,7 +399,7 @@ export function parseRule(value: unknown, depth = 0): Rule | null {
         p.digits >= 1 &&
         p.digits <= 6 &&
         text(p.separator, 16) &&
-        (p.position === 'prefix' || p.position === 'suffix')
+        (p.position === 'prefix' || p.position === 'suffix' || p.position === 'replace')
       )
         return {
           kind: 'number',
@@ -408,7 +417,7 @@ export function parseRule(value: unknown, depth = 0): Rule | null {
         typeof p.date === 'string' &&
         validDate(p.date) &&
         text(p.separator, 16) &&
-        (p.position === 'prefix' || p.position === 'suffix')
+        (p.position === 'prefix' || p.position === 'suffix' || p.position === 'replace')
       )
         return {
           kind: 'date',
@@ -430,10 +439,15 @@ export function ruleError(rule: Rule): string | null {
     case 'suffix':
       return !rule.params.text ? '请填写名称文字' : fragment(rule.params.text);
     case 'spaces':
-    case 'number':
       return fragment(rule.params.separator);
+    case 'number':
+      return rule.params.position === 'replace' ? null : fragment(rule.params.separator);
     case 'date':
-      return !validDate(rule.params.date) ? '请选择有效日期' : fragment(rule.params.separator);
+      return !validDate(rule.params.date)
+        ? '请选择有效日期'
+        : rule.params.position === 'replace'
+          ? null
+          : fragment(rule.params.separator);
     default:
       return null;
   }

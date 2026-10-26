@@ -48,6 +48,65 @@ async function generate(page: Page) {
   await page.getByRole('button', { name: '同意发送以上内容', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'AI 规则草案' })).toBeVisible();
 }
+test('ordinary numbering and date controls can replace the whole name and persist the choice', async ({
+  page,
+}) => {
+  await setup(page, [
+    { ...files[0], name: 'xxxx.jpg', path: '/fixture/xxxx.jpg', extension: 'jpg' },
+  ]);
+  await add(page, '连续编号');
+  await page.getByRole('combobox', { name: '编号位数', exact: true }).selectOption('4');
+  await page.getByRole('combobox', { name: '编号位置', exact: true }).selectOption('replace');
+  await expect(page.getByRole('textbox', { name: 'xxxx.jpg 的新名称' })).toHaveValue('0001.jpg');
+  await expect(page.getByRole('textbox', { name: '分隔符', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await page.getByLabel('方案名称').fill('纯编号');
+  await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();
+  expect(
+    (await page.evaluate(() => JSON.parse(localStorage.getItem('uu-presets')!)))[0].steps[0].rule
+      .params.position,
+  ).toBe('replace');
+  await page.getByRole('button', { name: '清空应用区', exact: true }).click();
+  await add(page, '添加日期');
+  await page.getByLabel('指定日期', { exact: true }).fill('2026-01-05');
+  await page.getByRole('combobox', { name: '日期位置', exact: true }).selectOption('replace');
+  await expect(page.getByRole('textbox', { name: 'xxxx.jpg 的新名称' })).toHaveValue(
+    '2026-01-05.jpg',
+  );
+  await page.getByRole('button', { name: '清空应用区', exact: true }).click();
+  await add(page, '日期识别与转换');
+  await page.getByLabel('日期来源', { exact: true }).selectOption('modified');
+  await page.getByLabel('输出方式', { exact: true }).selectOption('name');
+  await expect(page.getByRole('textbox', { name: 'xxxx.jpg 的新名称' })).toHaveValue(
+    '2024-01-01.jpg',
+  );
+  expect(await ipcCalls(page, 'execute')).toHaveLength(0);
+});
+test('direct whole-name replacement detects collisions and subsequent numbering resolves them', async ({
+  page,
+}) => {
+  const entries = ['a.jpg', 'b.jpg'].map((name, i) => ({
+    ...files[0],
+    id: String(i),
+    name,
+    path: '/fixture/' + name,
+    extension: 'jpg',
+  }));
+  await setup(page, entries);
+  await add(page, '直接设置名称');
+  await page.getByLabel('新名称（不含扩展名）', { exact: true }).fill('照片');
+  await expect(page.locator('.state-tag.error')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: '确认并执行', exact: true })).toBeDisabled();
+  await add(page, '分组与步长编号');
+  await expect(page.getByRole('textbox', { name: 'a.jpg 的新名称' })).toHaveValue('照片_001.jpg');
+  await expect(page.getByRole('textbox', { name: 'b.jpg 的新名称' })).toHaveValue('照片_002.jpg');
+  await expect(page.getByRole('button', { name: '确认并执行', exact: true })).toBeEnabled();
+  await page.getByLabel('编号位置', { exact: true }).selectOption('replace');
+  await page.getByLabel('补零位数', { exact: true }).fill('4');
+  await expect(page.getByRole('textbox', { name: 'a.jpg 的新名称' })).toHaveValue('0001.jpg');
+  await expect(page.getByRole('textbox', { name: 'b.jpg 的新名称' })).toHaveValue('0002.jpg');
+  expect(await ipcCalls(page, 'execute')).toHaveLength(0);
+});
 
 test('manual extract, date field and template use the native engine and expose captures', async ({
   page,

@@ -110,6 +110,7 @@ export function expressionProblem(
   parseChild: (v: unknown, depth: number) => Rule | null,
 ): string | null {
   if (!parseExpression(p, 0, parseChild)) return '表达式参数不完整或超出范围';
+  if (p.op === 'setName' && !String(p.text).trim()) return '请填写新名称';
   if (['replace', 'extract'].includes(p.op) && !p.pattern) return '请填写表达式';
   if (p.op === 'split' && !p.separator) return '字段分隔符不能为空';
   if (p.op === 'edit' && ['before', 'after'].includes(String(p.anchor)) && !p.marker)

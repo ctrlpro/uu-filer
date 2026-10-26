@@ -19,6 +19,31 @@ function input(name = '产品 图 01.JPG'): FileEntry[] {
   ];
 }
 describe('ordered reusable rule pipeline', () => {
+  it('replaces the whole stem with four-digit numbers and preserves subsequent stacking', () => {
+    const rule: Rule = {
+      kind: 'number',
+      params: { start: 1, digits: 4, separator: '/', position: 'replace' },
+    };
+    const steps = [makeStep(rule), makeStep({ kind: 'suffix', params: { text: '_归档' } })];
+    expect(applyPipeline(input('xxxx.jpg'), steps)[0].name).toBe('0001_归档.jpg');
+    expect(ruleError(rule)).toBeNull();
+    expect(parseSavedSteps(steps)?.[0].rule).toEqual(rule);
+  });
+  it('accepts full replacement modes from AI and keeps fixed date demo behavior aligned', () => {
+    const date: Rule = {
+      kind: 'date',
+      params: { date: '2026-01-05', separator: '/', position: 'replace' },
+    };
+    expect(applyPipeline(input('xxxx.jpg'), [makeStep(date)])[0].name).toBe('2026-01-05.jpg');
+    const fixed = catalogStep('expr-setName');
+    expect(ruleError(fixed.rule)).not.toBeNull();
+    expect(
+      parseRuleDraft({
+        rules: [date, { kind: 'expression', params: { op: 'setName', text: '照片' } }],
+        explanation: '完整替换名称',
+      }).rules,
+    ).toHaveLength(2);
+  });
   it('composes prefix and whitespace rules in order, preserving the extension', () => {
     const prefix = makeStep({ kind: 'prefix', params: { text: '项目 A_' } }),
       spaces = catalogStep('spaces');

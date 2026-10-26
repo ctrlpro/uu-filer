@@ -58,6 +58,109 @@ fn name(input: &str, rules: Vec<Rule>) -> String {
     assert!(r.details[0].error.is_none(), "{:?}", r.details);
     r.changes[0].name.clone()
 }
+#[test]
+fn full_number_replacement_discards_previous_stem_and_preserves_extension_boundaries() {
+    let names = ["xxxx.jpg", "photo.PNG", "archive.tar.gz", "README", ".env"];
+    let files: Vec<_> = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| file(&i.to_string(), n, "/x"))
+        .collect();
+    let number:Rule=serde_json::from_value(json!({"kind":"number","params":{"start":1,"digits":4,"separator":"/","position":"replace"}})).unwrap();
+    let r = run(&files, vec![number.clone()]);
+    assert_eq!(
+        r.changes
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["0001.jpg", "0002.PNG", "0003.tar.gz", "0004", "0005"]
+    );
+    assert!(r.details.iter().all(|d| d.error.is_none()));
+    let prefix = serde_json::from_value(json!({"kind":"prefix","params":{"text":"旧_"}})).unwrap();
+    let suffix =
+        serde_json::from_value(json!({"kind":"suffix","params":{"text":"_归档"}})).unwrap();
+    assert_eq!(
+        name("xxxx.jpg", vec![prefix, number, suffix]),
+        "0001_归档.jpg"
+    );
+}
+#[test]
+fn full_date_replacement_works_for_fixed_extracted_and_metadata_dates() {
+    let fixed = serde_json::from_value(
+        json!({"kind":"date","params":{"date":"2026-01-05","separator":"/","position":"replace"}}),
+    )
+    .unwrap();
+    assert_eq!(name("xxxx.jpg", vec![fixed]), "2026-01-05.jpg");
+    assert_eq!(
+        name(
+            "客户_20260105_合同.pdf",
+            vec![expr("dateFormat", json!({"mode":"name"}))]
+        ),
+        "2026-01-05.pdf"
+    );
+    assert_eq!(
+        name(
+            "xxxx.tar.gz",
+            vec![expr(
+                "dateFormat",
+                json!({"source":"modified","mode":"name","output":"YYYYMMDD_HH-mm-ss"})
+            )]
+        ),
+        "20240101_08-00-00.tar.gz"
+    );
+    assert_eq!(
+        name(
+            "xxxx.jpg",
+            vec![expr("dateFormat", json!({"source":"today","mode":"name"}))]
+        ),
+        "2026-10-26.jpg"
+    );
+    let r = run(
+        &[file("1", "客户_20260230.pdf", "/x")],
+        vec![expr("dateFormat", json!({"mode":"name"}))],
+    );
+    assert!(r.details[0].error.is_some());
+}
+#[test]
+fn direct_name_is_literal_and_stacks_with_numbering_without_disabling_conflict_checks() {
+    assert_eq!(
+        name("xxxx.jpg", vec![expr("setName", json!({"text":"{name}"}))]),
+        "{name}.jpg"
+    );
+    assert_eq!(
+        name(
+            "xxxx.jpg",
+            vec![
+                expr("setName", json!({"text":"照片"})),
+                expr("sequence", json!({"digits":4}))
+            ]
+        ),
+        "照片_0001.jpg"
+    );
+    for text in ["", "   ", "../bad", "folder/name"] {
+        assert!(engine::validate_rule(&expr("setName", json!({"text":text})), 0, false).is_err());
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let store = uu_filer::store::Store::open(&dir.path().join("db.sqlite")).unwrap();
+    let paths: Vec<String> = ["a.jpg", "b.jpg"]
+        .iter()
+        .map(|n| {
+            let p = dir.path().join(n);
+            std::fs::write(&p, b"UNCHANGED").unwrap();
+            p.to_string_lossy().into()
+        })
+        .collect();
+    let files = uu_filer::files::scan(&paths, false, &store).unwrap();
+    let r = run(&files, vec![expr("setName", json!({"text":"同名"}))]);
+    let entries = files.into_iter().map(|e| (e.id.clone(), e)).collect();
+    assert!(uu_filer::files::plan(&entries, &r.changes, "rename", None)
+        .unwrap()
+        .iter()
+        .all(|p| p.error.is_some()));
+    for path in paths {
+        assert_eq!(std::fs::read(path).unwrap(), b"UNCHANGED");
+    }
+}
 
 #[test]
 fn extracts_converts_and_reorders_new_fields() {

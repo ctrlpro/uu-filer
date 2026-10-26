@@ -280,13 +280,21 @@ pub fn validate_rule(rule: &Rule, depth: usize, allow_names: bool) -> Result<()>
                     fragment(string(p, "text"))?;
                 }
                 "sequence" => {
-                    fragment(string(p, "separator"))?;
+                    if string(p, "position") != "replace" {
+                        fragment(string(p, "separator"))?;
+                    }
                     if string(p, "group") == "field" && string(p, "field").is_empty() {
                         return Err("请填写分组字段".into());
                     }
                 }
                 "template" => {
                     template_tokens(string(p, "text"))?;
+                }
+                "setName" => {
+                    if string(p, "text").trim().is_empty() {
+                        return Err("请填写新名称".into());
+                    }
+                    fragment(string(p, "text"))?;
                 }
                 "dateFormat" => {
                     if matches!(string(p, "source"), "name" | "field") {
@@ -296,13 +304,18 @@ pub fn validate_rule(rule: &Rule, depth: usize, allow_names: bool) -> Result<()>
                         return Err("请填写日期字段".into());
                     }
                     if string(p, "mode") == "replace" && string(p, "source") != "name" {
-                        return Err("替换原日期只适用于名称来源；请选择前置、后置或写回字段".into());
+                        return Err(
+                            "替换原日期只适用于名称来源；请选择前置、后置、完整替换名称或写回字段"
+                                .into(),
+                        );
                     }
                     if string(p, "mode") == "field" && string(p, "field").is_empty() {
                         return Err("写回字段名不能为空".into());
                     }
                     date_output(2026, 1, 1, 0, 0, 0, string(p, "output"))?;
-                    fragment(string(p, "separator"))?;
+                    if matches!(string(p, "mode"), "prefix" | "suffix") {
+                        fragment(string(p, "separator"))?;
+                    }
                 }
                 "extension" if string(p, "action") == "set" => {
                     let ext = string(p, "text");
@@ -349,13 +362,17 @@ pub fn validate_rule(rule: &Rule, depth: usize, allow_names: bool) -> Result<()>
             if p.start > 999999 || !(1..=6).contains(&p.digits) {
                 return Err("编号参数超出范围".into());
             }
-            fragment(&p.separator)?;
+            if !matches!(p.position, crate::rules::Position::Replace) {
+                fragment(&p.separator)?;
+            }
         }
         Rule::Date(p) => {
             if !valid_date(&p.date) {
                 return Err("日期无效".into());
             }
-            fragment(&p.separator)?;
+            if !matches!(p.position, crate::rules::Position::Replace) {
+                fragment(&p.separator)?;
+            }
         }
         _ => {}
     }
@@ -1003,6 +1020,7 @@ fn apply_expression(
                 .collect();
         }
         "template" => c.name = render_template(string(p, "text"), c, o)?,
+        "setName" => c.name = string(p, "text").to_string(),
         "guard" => {
             let branch = if condition(&p["condition"], c, rt)? {
                 "rules"
@@ -1168,6 +1186,7 @@ fn apply_expression(
                 }
                 "prefix" => c.name = format!("{output}{}{}", string(p, "separator"), c.name),
                 "suffix" => c.name = format!("{}{}{output}", c.name, string(p, "separator")),
+                "name" => c.name = output,
                 _ => {
                     let (start, end) = range.ok_or("没有可替换的原日期")?;
                     c.name.replace_range(start..end, &output);
@@ -1264,12 +1283,14 @@ fn apply(
             c.name = match p.position {
                 crate::rules::Position::Prefix => format!("{n}{}{}", p.separator, c.name),
                 crate::rules::Position::Suffix => format!("{}{}{n}", c.name, p.separator),
+                crate::rules::Position::Replace => n,
             };
         }
         Rule::Date(p) => {
             c.name = match p.position {
                 crate::rules::Position::Prefix => format!("{}{}{}", p.date, p.separator, c.name),
                 crate::rules::Position::Suffix => format!("{}{}{}", c.name, p.separator, p.date),
+                crate::rules::Position::Replace => p.date.clone(),
             }
         }
     }

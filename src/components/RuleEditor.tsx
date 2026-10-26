@@ -1,5 +1,5 @@
 import type { Workspace } from '../useWorkspace';
-import { ruleError, ruleTitle, type Rule } from '../pipeline';
+import { ruleError, ruleTitle, type Rule, type NamePosition } from '../pipeline';
 import { ExpressionEditor } from './ExpressionEditor';
 export function RuleEditor({ w }: { w: Workspace }) {
   const step = w.selectedStep;
@@ -120,24 +120,27 @@ export function RuleEditor({ w }: { w: Workspace }) {
                 onChange={(e) =>
                   update({
                     ...rule,
-                    params: { ...rule.params, position: e.target.value as 'prefix' | 'suffix' },
+                    params: { ...rule.params, position: e.target.value as NamePosition },
                   })
                 }
               >
                 <option value="prefix">前置</option>
                 <option value="suffix">后置</option>
+                <option value="replace">完整替换名称</option>
               </select>
             </label>
-            <label className="field">
-              分隔符
-              <input
-                maxLength={16}
-                value={rule.params.separator}
-                onChange={(e) =>
-                  update({ ...rule, params: { ...rule.params, separator: e.target.value } })
-                }
-              />
-            </label>
+            {rule.params.position !== 'replace' && (
+              <label className="field">
+                分隔符
+                <input
+                  maxLength={16}
+                  value={rule.params.separator}
+                  onChange={(e) =>
+                    update({ ...rule, params: { ...rule.params, separator: e.target.value } })
+                  }
+                />
+              </label>
+            )}
           </div>
         </>
       )}
@@ -163,24 +166,27 @@ export function RuleEditor({ w }: { w: Workspace }) {
                 onChange={(e) =>
                   update({
                     ...rule,
-                    params: { ...rule.params, position: e.target.value as 'prefix' | 'suffix' },
+                    params: { ...rule.params, position: e.target.value as NamePosition },
                   })
                 }
               >
                 <option value="prefix">前置</option>
                 <option value="suffix">后置</option>
+                <option value="replace">完整替换名称</option>
               </select>
             </label>
-            <label className="field">
-              分隔符
-              <input
-                maxLength={16}
-                value={rule.params.separator}
-                onChange={(e) =>
-                  update({ ...rule, params: { ...rule.params, separator: e.target.value } })
-                }
-              />
-            </label>
+            {rule.params.position !== 'replace' && (
+              <label className="field">
+                分隔符
+                <input
+                  maxLength={16}
+                  value={rule.params.separator}
+                  onChange={(e) =>
+                    update({ ...rule, params: { ...rule.params, separator: e.target.value } })
+                  }
+                />
+              </label>
+            )}
           </div>
         </>
       )}

@@ -1,5 +1,20 @@
 [
   {
+    "op": "setName",
+    "name": "直接设置名称",
+    "category": "文本处理",
+    "example": "xxxx.jpg → 新名称.jpg，可继续叠加编号",
+    "fields": [
+      {
+        "key": "text",
+        "label": "新名称（不含扩展名）",
+        "type": "text",
+        "default": "",
+        "help": "完整替换当前名称，保留扩展名；多个同类文件可继续叠加编号以避免重名"
+      }
+    ]
+  },
+  {
     "op": "replace",
     "name": "高级查找替换",
     "category": "文本处理",
@@ -283,7 +298,7 @@
         "options": [
           ["prefix", "前置"],
           ["suffix", "后置"],
-          ["replace", "仅保留编号"]
+          ["replace", "完整替换名称（仅编号）"]
         ]
       },
       { "key": "separator", "label": "分隔符", "type": "text", "default": "_" },
@@ -362,7 +377,8 @@
           ["replace", "替换名称中的日期"],
           ["field", "写回提取字段"],
           ["prefix", "添加到前面"],
-          ["suffix", "添加到后面"]
+          ["suffix", "添加到后面"],
+          ["name", "完整替换名称（仅日期）"]
         ]
       },
       { "key": "separator", "label": "分隔符", "type": "text", "default": "_" }

@@ -251,6 +251,8 @@ export function LegacyFields({
   return (
     <>
       {Object.entries(rule.params).map(([key, value]) => {
+        if (key === 'separator' && 'position' in rule.params && rule.params.position === 'replace')
+          return null;
         if (typeof value !== 'string' && typeof value !== 'number') return null;
         const update = (v: string | number) =>
           onChange({ ...rule, params: { ...rule.params, [key]: v } } as Rule);
@@ -263,6 +265,7 @@ export function LegacyFields({
                   ? [
                       ['prefix', '前置'],
                       ['suffix', '后置'],
+                      ['replace', '完整替换名称'],
                     ]
                   : [
                       ['lower', '小写'],
@@ -314,6 +317,14 @@ export function ExpressionEditor({
         )
           return null;
         if (value.op === 'sequence' && f.key === 'field' && value.group !== 'field') return null;
+        if (value.op === 'sequence' && f.key === 'separator' && value.position === 'replace')
+          return null;
+        if (
+          value.op === 'dateFormat' &&
+          f.key === 'separator' &&
+          !['prefix', 'suffix'].includes(String(value.mode))
+        )
+          return null;
         if (value.op === 'extension' && f.key === 'text' && value.action !== 'set') return null;
         if (
           value.op === 'dateFormat' &&
