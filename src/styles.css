@@ -8,8 +8,8 @@
     'Microsoft YaHei',
     sans-serif;
   --on-accent: #fff;
-  --accent: #7059d9;
-  --accent-rgb: 112, 89, 217;
+  --accent: #b05139;
+  --accent-rgb: 176, 81, 57;
   --bg: #f5f6f8;
   --surface: #fff;
   --surface2: #f9fafb;
@@ -1304,7 +1304,7 @@ dialog::backdrop {
 }
 /* Application controls and desktop-safe layout. */
 :root {
-  --accent-text: #7059d9;
+  --accent-text: #b05139;
   --on-accent: #fff;
   --row-height: 38px;
   font-synthesis: none;

@@ -57,6 +57,6 @@ describe('unrestricted accent palette', () => {
       theme: 'dark',
       density: 'compact',
     });
-    expect(parseAppearance('{"accent":"oops","panelWidth":"wide"}').accent).toBe('#7059d9');
+    expect(parseAppearance('{"accent":"oops","panelWidth":"wide"}').accent).toBe('#b05139');
   });
 });

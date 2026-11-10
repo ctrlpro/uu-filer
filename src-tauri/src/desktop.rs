@@ -10,7 +10,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
-use tauri::Manager;
+use tauri::{LogicalSize, Manager, WindowEvent};
 
 struct Workspace {
     db: PathBuf,
@@ -302,6 +302,45 @@ async fn save_settings(
     })
     .await
 }
+#[derive(Serialize, Deserialize, Clone, Copy)]
+struct WindowState {
+    width: f64,
+    height: f64,
+    maximized: bool,
+}
+
+fn window_state_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| dir.join("window-state.json"))
+}
+
+fn load_window_state(path: &Path) -> Option<WindowState> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    let state: WindowState = serde_json::from_str(&raw).ok()?;
+    let sane =
+        (320.0..=16384.0).contains(&state.width) && (240.0..=16384.0).contains(&state.height);
+    sane.then_some(state)
+}
+
+fn store_window_state(path: &Path, state: WindowState) {
+    if let Ok(raw) = serde_json::to_string(&state) {
+        let _ = std::fs::write(path, raw);
+    }
+}
+
+fn restore_window_state(window: &tauri::WebviewWindow, path: &Path) {
+    let Some(state) = load_window_state(path) else {
+        return;
+    };
+    if state.maximized {
+        let _ = window.maximize();
+    } else {
+        let _ = window.set_size(LogicalSize::new(state.width, state.height));
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -315,7 +354,34 @@ pub fn run() {
                 entries: HashMap::new(),
                 ai: Ai::default(),
             })));
+            if let (Some(window), Some(state_path)) =
+                (app.get_webview_window("main"), window_state_path(app.handle()))
+            {
+                restore_window_state(&window, &state_path);
+            }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if matches!(
+                event,
+                WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
+            ) {
+                let (Ok(scale), Ok(size)) = (window.scale_factor(), window.inner_size()) else {
+                    return;
+                };
+                let Some(state_path) = window_state_path(window.app_handle()) else {
+                    return;
+                };
+                let logical: LogicalSize<f64> = size.to_logical(scale);
+                store_window_state(
+                    &state_path,
+                    WindowState {
+                        width: logical.width,
+                        height: logical.height,
+                        maximized: window.is_maximized().unwrap_or(false),
+                    },
+                );
+            }
         })
         .invoke_handler(tauri::generate_handler![
             add_files,

@@ -9,7 +9,7 @@ export interface Appearance {
 }
 export const defaultAppearance: Appearance = {
   theme: 'system',
-  accent: '#7059d9',
+  accent: '#b05139',
   density: 'standard',
   panelWidth: 334,
   panelOpen: true,
