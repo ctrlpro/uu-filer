@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "UU Filer",
+  "productName": "Nomile",
   "version": "0.1.0",
-  "identifier": "app.uufiler.desktop",
+  "identifier": "app.nomile.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -11,7 +11,7 @@
   },
   "app": {
     "windows": [
-      { "title": "UU Filer", "width": 1320, "height": 860, "minWidth": 960, "minHeight": 640 }
+      { "title": "Nomile", "width": 1320, "height": 860, "minWidth": 960, "minHeight": 640 }
     ],
     "security": {
       "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost"

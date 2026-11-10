@@ -257,7 +257,7 @@ fn secret(endpoint: &str) -> Result<keyring::Entry> {
         Err("当前凭据持久化仅支持 Windows 和 macOS，不会退回明文存储".into())
     }
     #[cfg(any(target_os = "windows", target_os = "macos"))]
-    keyring::Entry::new("app.uufiler.desktop", &endpoint).map_err(|e| e.to_string())
+    keyring::Entry::new("app.nomile.desktop", &endpoint).map_err(|e| e.to_string())
 }
 #[tauri::command]
 async fn save_key(endpoint: String, key: String) -> Result<()> {
@@ -308,7 +308,7 @@ pub fn run() {
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
-            let db = dir.join("uu-filer.sqlite");
+            let db = dir.join("nomile.sqlite");
             Store::open(&db).map_err(std::io::Error::other)?;
             app.manage(Arc::new(Mutex::new(Workspace {
                 db,
@@ -338,5 +338,5 @@ pub fn run() {
             save_settings
         ])
         .run(tauri::generate_context!())
-        .expect("无法启动 UU Filer");
+        .expect("无法启动 Nomile");
 }

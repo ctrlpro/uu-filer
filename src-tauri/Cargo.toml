@@ -1,16 +1,16 @@
 [package]
-name = "uu-filer"
+name = "nomile"
 version = "0.1.0"
 edition = "2021"
 description = "Privacy-first local batch file organizer"
 license = "MIT"
 
 [lib]
-name = "uu_filer"
+name = "nomile_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [[bin]]
-name = "uu-filer"
+name = "nomile"
 path = "src/main.rs"
 required-features = ["desktop"]
 
