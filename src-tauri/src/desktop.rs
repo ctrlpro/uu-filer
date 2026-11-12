@@ -354,9 +354,10 @@ pub fn run() {
                 entries: HashMap::new(),
                 ai: Ai::default(),
             })));
-            if let (Some(window), Some(state_path)) =
-                (app.get_webview_window("main"), window_state_path(app.handle()))
-            {
+            if let (Some(window), Some(state_path)) = (
+                app.get_webview_window("main"),
+                window_state_path(app.handle()),
+            ) {
                 restore_window_state(&window, &state_path);
             }
             Ok(())
