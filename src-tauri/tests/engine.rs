@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use nomile_lib::{
+use uu_filer::{
     engine::{self, Example, Options, Step},
     files::Entry,
     rules::Rule,
@@ -141,7 +141,7 @@ fn direct_name_is_literal_and_stacks_with_numbering_without_disabling_conflict_c
         assert!(engine::validate_rule(&expr("setName", json!({"text":text})), 0, false).is_err());
     }
     let dir = tempfile::tempdir().unwrap();
-    let store = nomile_lib::store::Store::open(&dir.path().join("db.sqlite")).unwrap();
+    let store = uu_filer::store::Store::open(&dir.path().join("db.sqlite")).unwrap();
     let paths: Vec<String> = ["a.jpg", "b.jpg"]
         .iter()
         .map(|n| {
@@ -150,10 +150,10 @@ fn direct_name_is_literal_and_stacks_with_numbering_without_disabling_conflict_c
             p.to_string_lossy().into()
         })
         .collect();
-    let files = nomile_lib::files::scan(&paths, false, &store).unwrap();
+    let files = uu_filer::files::scan(&paths, false, &store).unwrap();
     let r = run(&files, vec![expr("setName", json!({"text":"同名"}))]);
     let entries = files.into_iter().map(|e| (e.id.clone(), e)).collect();
-    assert!(nomile_lib::files::plan(&entries, &r.changes, "rename", None)
+    assert!(uu_filer::files::plan(&entries, &r.changes, "rename", None)
         .unwrap()
         .iter()
         .all(|p| p.error.is_some()));
@@ -621,8 +621,8 @@ fn generated_rules_go_through_real_file_execution_and_undo() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("客户-20260105-HT003.pdf");
     std::fs::write(&path, b"UNCHANGED_CONTENT").unwrap();
-    let store = nomile_lib::store::Store::open(&dir.path().join("journal.sqlite")).unwrap();
-    let files = nomile_lib::files::scan(&[path.to_string_lossy().into()], false, &store).unwrap();
+    let store = uu_filer::store::Store::open(&dir.path().join("journal.sqlite")).unwrap();
+    let files = uu_filer::files::scan(&[path.to_string_lossy().into()], false, &store).unwrap();
     let r = run(
         &files,
         vec![
@@ -632,11 +632,11 @@ fn generated_rules_go_through_real_file_execution_and_undo() {
     );
     assert!(r.details[0].error.is_none());
     let entries = files.into_iter().map(|f| (f.id.clone(), f)).collect();
-    let result = nomile_lib::files::execute(&store, &entries, &r.changes, "rename", None).unwrap();
+    let result = uu_filer::files::execute(&store, &entries, &r.changes, "rename", None).unwrap();
     assert_eq!(result.completed, 1);
     let renamed = dir.path().join("20260105_客户_HT003.pdf");
     assert_eq!(std::fs::read(&renamed).unwrap(), b"UNCHANGED_CONTENT");
-    nomile_lib::files::undo(&store, &result.batch).unwrap();
+    uu_filer::files::undo(&store, &result.batch).unwrap();
     assert_eq!(std::fs::read(path).unwrap(), b"UNCHANGED_CONTENT");
     assert!(!renamed.exists());
 }

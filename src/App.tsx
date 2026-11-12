@@ -102,7 +102,7 @@ export default function App() {
     <div className={`app ${a.settings.panelOpen ? '' : 'panel-hidden'}`} ref={appRef}>
       <header className="topbar">
         <img className="logo" src="/logo.png" alt="" width="28" height="28" />
-        <strong className="brand">nomile</strong>
+        <strong className="brand">uu filer</strong>
         <span className="top-separator" />
         <div className="breadcrumb">
           <span>工作区</span>

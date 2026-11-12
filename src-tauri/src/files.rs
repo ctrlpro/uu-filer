@@ -290,7 +290,7 @@ pub fn execute(
             staging: source
                 .parent()
                 .unwrap()
-                .join(format!(".nomile-{id}"))
+                .join(format!(".uu-filer-{id}"))
                 .to_string_lossy()
                 .into(),
             operation: operation.into(),
@@ -567,7 +567,7 @@ mod tests {
             target: dir.path().join("new.txt").to_string_lossy().into(),
             staging: dir
                 .path()
-                .join(".nomile-test-stage")
+                .join(".uu-filer-test-stage")
                 .to_string_lossy()
                 .into(),
             operation: "rename".into(),

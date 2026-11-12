@@ -1,7 +1,7 @@
 //! JSON stdin/stdout adapter used by integration tests; the real desktop uses the same engine.
 use serde::Deserialize;
 use std::{collections::HashMap, io::Read};
-use nomile_lib::{
+use uu_filer::{
     engine::{self, Example, Options, Step},
     files::Entry,
 };
